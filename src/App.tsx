@@ -4,7 +4,8 @@ import Dashboard from "./components/Dashboard";
 import BallotWheel from "./components/BallotWheel";
 import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
-import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar } from "lucide-react";
+import MemberPortal from "./components/MemberPortal";
+import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User } from "lucide-react";
 
 // Seed default members for the Rotating Savings (Ajo) system to pre-exist
 const INITIAL_MEMBERS: Member[] = [
@@ -44,7 +45,7 @@ export default function App() {
   });
 
   const [currentMonthId, setCurrentMonthId] = useState<string>("2026-06");
-  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal">("dashboard");
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
 
   useEffect(() => {
@@ -198,6 +199,21 @@ export default function App() {
     }));
   };
 
+  // Action: Confirm pot payout receipt by winning member
+  const handleConfirmPayoutReceipt = (memberId: string, monthId: string) => {
+    setMonths(prev => prev.map(m => {
+      if (m.id === monthId) {
+        const confirmed = m.payoutConfirmedByRecipients || [];
+        if (confirmed.includes(memberId)) return m;
+        return {
+          ...m,
+          payoutConfirmedByRecipients: [...confirmed, memberId]
+        };
+      }
+      return m;
+    }));
+  };
+
   // Action: Complete and close existing month pool
   const handleCloseRound = () => {
     setMonths(prev => prev.map(m => {
@@ -270,10 +286,20 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
         
         {/* Navigation Tabs Bar */}
-        <div className="flex bg-slate-200/50 rounded-xl p-1 max-w-2xl gap-1">
+        <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-4xl gap-1">
+          <button
+            onClick={() => setActiveTab("portal")}
+            className={`flex items-center gap-1.5 flex-1 min-w-[120px] justify-center py-2.5 px-3 rounded-lg text-xs font-extrabold transition duration-200 ${
+              activeTab === "portal" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/30"
+            }`}
+          >
+            <User className="h-4 w-4" />
+            <span>👥 Member Portal</span>
+          </button>
+
           <button
             onClick={() => setActiveTab("dashboard")}
-            className={`flex items-center gap-1.5 flex-1 justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-200 ${
+            className={`flex items-center gap-1.5 flex-1 min-w-[125px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-200 ${
               activeTab === "dashboard" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
             }`}
           >
@@ -283,7 +309,7 @@ export default function App() {
           
           <button
             onClick={() => setActiveTab("ballot")}
-            className={`flex items-center gap-1.5 flex-1 justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+            className={`flex items-center gap-1.5 flex-1 min-w-[110px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
               activeTab === "ballot" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
             }`}
           >
@@ -293,7 +319,7 @@ export default function App() {
 
           <button
             onClick={() => setActiveTab("auditor")}
-            className={`flex items-center gap-1.5 flex-1 justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+            className={`flex items-center gap-1.5 flex-1 min-w-[130px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
               activeTab === "auditor" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
             }`}
           >
@@ -303,7 +329,7 @@ export default function App() {
 
           <button
             onClick={() => setActiveTab("whatsapp")}
-            className={`flex items-center gap-1.5 flex-1 justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+            className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
               activeTab === "whatsapp" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
             }`}
           >
@@ -314,6 +340,18 @@ export default function App() {
 
         {/* Tab Viewport Routing Container */}
         <div className="min-h-[450px]">
+          {activeTab === "portal" && (
+            <MemberPortal
+              members={members}
+              months={months}
+              currentMonthId={currentMonthId}
+              currency="₦"
+              onAddMember={handleAddMember}
+              onPaymentApproved={(mId, amt, ref, sName) => handleRecordPayment(mId, amt, ref, sName)}
+              onConfirmPayoutReceipt={handleConfirmPayoutReceipt}
+            />
+          )}
+
           {activeTab === "dashboard" && (
             <Dashboard
               members={members}

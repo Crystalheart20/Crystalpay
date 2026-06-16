@@ -38,12 +38,20 @@ export default function Dashboard({
   const [spotsInput, setSpotsInput] = useState<1 | 2>(1);
   const [currencyInput, setCurrencyInput] = useState("NGN");
 
+  const currentMonth = months.find(m => m.id === currentMonthId);
+
+  React.useEffect(() => {
+    if (currentMonth) {
+      setAmountInput(currentMonth.targetAmountPerMember);
+      setSpotsInput(currentMonth.recipientsCount);
+    }
+  }, [currentMonthId]);
+
   // WhatsApp reminder generator state
   const [generatedMessage, setGeneratedMessage] = useState("");
   const [generatingType, setGeneratingType] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   
-  const currentMonth = months.find(m => m.id === currentMonthId);
   const totalRecipients = currentMonth ? currentMonth.recipients.length : 0;
   
   // Calculate dynamic stats

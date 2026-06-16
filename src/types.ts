@@ -32,6 +32,7 @@ export interface ContributionMonth {
   status: "ACTIVE" | "COMPLETED";
   payments: PaymentLog[]; // Log of confirmed payments
   closingRemark?: string; // AI generated closing template
+  payoutConfirmedByRecipients?: string[]; // List of winner IDs who confirmed bank receipt
 }
 
 export interface ChatMessage {

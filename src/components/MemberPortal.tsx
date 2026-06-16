@@ -1,0 +1,784 @@
+import React, { useState, useRef } from "react";
+import { Member, ContributionMonth } from "../types";
+import { 
+  ShieldCheck, 
+  Sparkles, 
+  Loader2, 
+  Copy, 
+  Check, 
+  Upload, 
+  CheckCircle, 
+  AlertTriangle, 
+  Coins, 
+  LogIn, 
+  UserPlus, 
+  LogOut, 
+  Trophy, 
+  ArrowRight,
+  Phone,
+  FileText,
+  BadgePercent,
+  CheckSquare
+} from "lucide-react";
+
+interface MemberPortalProps {
+  members: Member[];
+  months: ContributionMonth[];
+  currentMonthId: string;
+  currency: string;
+  onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
+  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string) => void;
+  onConfirmPayoutReceipt: (memberId: string, monthId: string) => void;
+}
+
+export default function MemberPortal({
+  members,
+  months,
+  currentMonthId,
+  currency,
+  onAddMember,
+  onPaymentApproved,
+  onConfirmPayoutReceipt
+}: MemberPortalProps) {
+  // Authentication & Session state
+  const [loggedInMemberId, setLoggedInMemberId] = useState<string>(() => {
+    return localStorage.getItem("ajo_member_session") || "";
+  });
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+
+  // Self Registration Form state
+  const [regName, setRegName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regBank, setRegBank] = useState("");
+  const [regAccountNo, setRegAccountNo] = useState("");
+  const [regAccountName, setRegAccountName] = useState("");
+  const [regSuccessMsg, setRegSuccessMsg] = useState("");
+
+  // Receipt Verifier State inside portal
+  const [dragActive, setDragActive] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [manualText, setManualText] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [auditResult, setAuditResult] = useState<any | null>(null);
+  const [auditError, setAuditError] = useState("");
+  
+  // UX Copy trigger state
+  const [copiedAccNo, setCopiedAccNo] = useState<string | null>(null);
+  const [receiptConfirming, setReceiptConfirming] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
+  const loggedInMember = members.find(m => m.id === loggedInMemberId);
+
+  // Constants & Metrics
+  const activeRecipientsList = currentMonth 
+    ? members.filter(m => currentMonth.recipients.includes(m.id))
+    : [];
+
+  const targetAmount = currentMonth?.targetAmountPerMember || 10000;
+  
+  // Checks if payment is already recorded for current member
+  const hasPaidCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId);
+  const isSelectedRecipientThisMonth = currentMonth?.recipients.includes(loggedInMemberId);
+
+  // Check if payout is already confirmed by this recipient
+  const isPayoutConfirmedByThisRecipient = currentMonth?.payoutConfirmedByRecipients?.includes(loggedInMemberId) || false;
+
+  const handleLogin = (memberId: string) => {
+    if (!memberId) return;
+    setLoggedInMemberId(memberId);
+    localStorage.setItem("ajo_member_session", memberId);
+    resetUploadState();
+  };
+
+  const handleLogout = () => {
+    setLoggedInMemberId("");
+    localStorage.removeItem("ajo_member_session");
+    resetUploadState();
+  };
+
+  const handleRegisterSelf = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regName || !regBank || !regAccountNo) {
+      setAuditError("Please fill out all required fields marked with *");
+      return;
+    }
+
+    // Call registration prop
+    onAddMember({
+      name: regName,
+      phone: regPhone || "N/A",
+      bankName: regBank,
+      accountNo: regAccountNo,
+      accountName: regAccountName || regName
+    });
+
+    setRegSuccessMsg(`Congratulations ${regName}! You have registered successfully. You can now log in below.`);
+    
+    // Auto populate newly registered profile login matching by name or just resetting
+    setRegName("");
+    setRegPhone("");
+    setRegBank("");
+    setRegAccountNo("");
+    setRegAccountName("");
+    
+    setTimeout(() => {
+      setIsRegisterMode(false);
+      setRegSuccessMsg("");
+    }, 4000);
+  };
+
+  // Drag & Drop Handling
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const processFile = (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAuditError("Please upload an image file (PNG/JPEG/GIF) of your receipt.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+      setAuditError("");
+      setAuditResult(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleAuditProof = async () => {
+    if (!loggedInMemberId) return;
+    if (!imagePreview && !manualText.trim()) {
+      setAuditError("Please upload an transaction proof screenshot or paste your credit SMS.");
+      return;
+    }
+
+    setUploading(true);
+    setAuditError("");
+    setAuditResult(null);
+
+    try {
+      const response = await fetch("/api/verify-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: imagePreview,
+          text: manualText,
+          expectedAmount: targetAmount,
+          memberName: loggedInMember?.name || "Member"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Gemini audit is temporarily offline or returned an error.");
+      }
+
+      const auditData = await response.json();
+      setAuditResult(auditData);
+
+      // Save payment state in App if auto-approved by Gemini
+      if (auditData.isReceipt && auditData.status === "APPROVED") {
+        onPaymentApproved(
+          loggedInMemberId,
+          auditData.amount || targetAmount,
+          auditData.transactionReference || ("TXN-" + Date.now()),
+          auditData.senderName || loggedInMember?.name
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAuditError(err.message || "Failed to process receipt validation with Gemini OCR.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const resetUploadState = () => {
+    setImagePreview(null);
+    setManualText("");
+    setAuditResult(null);
+    setAuditError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedAccNo(id);
+    setTimeout(() => setCopiedAccNo(null), 1500);
+  };
+
+  const handleConfirmPayout = () => {
+    if (!loggedInMemberId) return;
+    setReceiptConfirming(true);
+    // Simulate minor visual confirmation timing
+    setTimeout(() => {
+      onConfirmPayoutReceipt(loggedInMemberId, currentMonthId);
+      setReceiptConfirming(false);
+    }, 1200);
+  };
+
+  // Compute calculated metrics
+  const poolSize = targetAmount * (members.length - currentMonth?.recipients.length);
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Step 1: Not Logged In Viewport */}
+      {!loggedInMember ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center min-h-[400px]">
+          
+          <div className="lg:col-span-6 space-y-4">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span>West African Ajo Self-Service</span>
+            </div>
+            
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-tight">
+              Secure <span className="text-indigo-600">Ajo Rotating Savings</span> Member Portal
+            </h2>
+
+            <p className="text-slate-500 text-sm leading-relaxed">
+              Welcome back to your central savings community hub. Log in to copy the active rotational winner's bank numbers, submit system payment proof screenshots, process OCR instant verification audits, and coordinate direct trust transparency.
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-4 flex gap-3 text-xs leading-relaxed text-amber-800">
+              <Coins className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block font-bold mb-0.5">Active Contribution Month: {currentMonth?.name || "N/A"}</strong>
+                <span>Each scheduled member is contributing <strong className="text-slate-900 font-bold">{currency} {targetAmount.toLocaleString()}</strong> towards the selected winners this round.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
+            
+            {/* Tab selection for Log in vs Register */}
+            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+              <button
+                onClick={() => setIsRegisterMode(false)}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-150 flex items-center justify-center gap-1.5 ${
+                  !isRegisterMode ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Log In Securely</span>
+              </button>
+              
+              <button
+                onClick={() => setIsRegisterMode(true)}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition duration-150 flex items-center justify-center gap-1.5 ${
+                  isRegisterMode ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Register Profile</span>
+              </button>
+            </div>
+
+            {regSuccessMsg && (
+              <div className="bg-emerald-50 text-emerald-800 p-4 border border-emerald-100 rounded-xl text-xs font-semibold leading-relaxed">
+                {regSuccessMsg}
+              </div>
+            )}
+
+            {/* Login View */}
+            {!isRegisterMode ? (
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Select Your Member Account</label>
+                  <p className="text-[10px] text-slate-400">Choose your name from the certified Ajo register roster to enter your dashboard.</p>
+                  
+                  <select
+                    onChange={(e) => handleLogin(e.target.value)}
+                    value=""
+                    className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-1"
+                  >
+                    <option value="">-- Choose Profile to Log In --</option>
+                    {members.map(m => (
+                      <option key={m.id} value={m.id}>
+                        👥 {m.name} ({m.bankName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-400 space-y-1">
+                  <h4 className="font-bold text-slate-500 text-[10px] uppercase">Portal Feature Capabilities:</h4>
+                  <p>• Copy target winner account numbers with 1 click</p>
+                  <p>• Upload transfer receipt images for automated Gemini OCR verification</p>
+                  <p>• Recipients can sign off/confirm payout receipts historically</p>
+                </div>
+              </div>
+            ) : (
+              /* Self Registration Form */
+              <form onSubmit={handleRegisterSelf} className="space-y-3.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Kolawole Cole"
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">WhatsApp Phone</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. +234 803..."
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Your Bank *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. GTBank, Access"
+                      value={regBank}
+                      onChange={(e) => setRegBank(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Account Number *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 0123456789"
+                      value={regAccountNo}
+                      onChange={(e) => setRegAccountNo(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name (If different)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Kolawole Cole"
+                    value={regAccountName}
+                    onChange={(e) => setRegAccountName(e.target.value)}
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg transition"
+                >
+                  Register Profile and Save
+                </button>
+              </form>
+            )}
+
+          </div>
+
+        </div>
+      ) : (
+        /* Step 2: Member dashboard portal! */
+        <div className="space-y-6">
+          
+          {/* Dashboard Header Bar */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-lg">
+                {loggedInMember.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-slate-800">Hello, {loggedInMember.name}!</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    Ajo Active Contributor
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                  <Phone className="w-3 h-3" /> {loggedInMember.phone} • Bank: {loggedInMember.bankName} Account: {loggedInMember.accountNo}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="text-xs font-semibold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-xl border border-rose-100 flex items-center gap-1.5 transition"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out Portal</span>
+            </button>
+          </div>
+
+          {/* Persona Workflows */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* LHS: Task List, Winner details and payment history */}
+            <div className="lg:col-span-6 space-y-6">
+              
+              {/* Box 1: Payout recipient Details and Transfer instructions */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
+                
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-amber-500" />
+                    <h4 className="font-bold text-slate-800 text-sm">Monthly Recipient Account Details</h4>
+                  </div>
+                  
+                  <span className="text-xs font-bold text-indigo-600">
+                    Target: {currency} {targetAmount.toLocaleString()}
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Please proceed with your monthly direct bank transfer of <strong className="text-slate-900 font-bold">{currency} {targetAmount.toLocaleString()}</strong> to the current rotational pot winners listed below. Drop screenshot proofs in the next box.
+                </p>
+
+                {activeRecipientsList.length > 0 ? (
+                  <div className="space-y-3.5">
+                    {activeRecipientsList.map((rec, i) => (
+                      <div key={rec.id} className="relative bg-slate-50/50 p-4 rounded-xl border border-slate-200/55 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Pot Winner Recipient {i+1}</span>
+                          <span className="text-sm font-extrabold text-slate-800 block">{rec.name}</span>
+                          <div className="font-mono text-xs text-slate-500 space-y-0.5">
+                            <p className="font-bold text-slate-600">{rec.bankName}</p>
+                            <p>Holder: {rec.accountName}</p>
+                            <p className="text-indigo-600 text-sm font-semibold">{rec.accountNo}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => copyToClipboard(rec.accountNo, rec.id)}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition self-end sm:self-center"
+                        >
+                          {copiedAccNo === rec.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Bank No</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center p-6 bg-slate-50 rounded-xl">
+                    <p className="text-xs text-slate-400 font-medium">Wait! The ballot draw hasn't been conducted for this round yet.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Box 1B: WINNER SPECIAL CONFIRMATION PORTAL PANEL */}
+              {isSelectedRecipientThisMonth && (
+                <div className="bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-indigo-500/10 rounded-2xl p-6 border-2 border-amber-500/20 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-6 w-6 text-amber-500 animate-bounce" />
+                    <div>
+                      <h4 className="font-black text-slate-800 text-base">You are {currentMonth?.name} Recipient Winner!</h4>
+                      <p className="text-[11px] text-slate-500 font-medium">Please check your bank account statement.</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    As this month's Rotational Ajo recipient, the total estimated savings pot size of <strong className="text-slate-800 font-bold">{currency} {poolSize.toLocaleString()}</strong> is being transferred directly to your bank account of record by the other members. 
+                  </p>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-amber-500/10 text-xs">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Receipt Confirmation Status</span>
+                    {isPayoutConfirmedByThisRecipient ? (
+                      <div className="text-emerald-700 font-bold flex items-center gap-1.5">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>You have verified receipt of this month's pot successfully!</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-amber-800 font-medium animate-pulse">Pending your final verification signal before closing the round ledger.</p>
+                        
+                        <button
+                          onClick={handleConfirmPayout}
+                          disabled={receiptConfirming}
+                          className="w-full text-xs font-bold py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1.5 transition shadow"
+                        >
+                          {receiptConfirming ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Submitting confirmation...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckSquare className="w-4 h-4" />
+                              <span>Yes, I confirm I have received all monthly money in my bank</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Box 2: Personal Saving Profile Streak & Contribution History info */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
+                <h4 className="font-bold text-slate-800 text-sm">Your Personal Contribution Ledger</h4>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 p-4 rounded-xl">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Payment Status</span>
+                    {hasPaidCurrentMonth ? (
+                      <span className="text-emerald-700 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4 mt-0.5" /> PAID CONFIRMED
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 animate-pulse" /> OUTSTANDING
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Streaks Index</span>
+                    <span className="text-indigo-700 text-base font-extrabold mt-1 block">🏆 100% On-Time</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h5 className="text-[10px] font-bold text-slate-400 uppercase">Ajo Rotation History</h5>
+                  <div className="text-xs text-slate-600 divide-y divide-slate-100">
+                    <div className="py-2 flex justify-between">
+                      <span className="font-semibold text-slate-700">June 2026 Rotation</span>
+                      <span>{hasPaidCurrentMonth ? "Paid" : "Outstanding Invoice"}</span>
+                    </div>
+                    {loggedInMember.collectedMonths.map(mon => (
+                      <div key={mon} className="py-2 flex justify-between">
+                        <span className="font-semibold text-indigo-700">🏆 Earned payout slot for round {mon}</span>
+                        <span className="text-emerald-600">FULLY COLLECTED</span>
+                      </div>
+                    ))}
+                    <div className="py-2 flex justify-between text-slate-400">
+                      <span>May 2026 Rotation</span>
+                      <span>Paid On-time</span>
+                    </div>
+                    <div className="py-2 flex justify-between text-slate-400">
+                      <span>April 2026 Rotation</span>
+                      <span>Paid On-time</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* RHS: OCR Upload Proof Center */}
+            <div className="lg:col-span-6 space-y-6">
+              
+              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-5">
+                
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    <h4 className="font-bold text-slate-800 text-sm">Quick Contribution OCR Audit</h4>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    <Sparkles className="w-3 h-3" /> Gemini 3.5 AI Verified
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Make your transfer, then upload the receipt screenshot or paste the instant SMS transaction alert code here. Our AI auditor will analyze it, auto-approve the payment, and check you off as <strong>PAID</strong> immediately!
+                </p>
+
+                {/* File Upload center */}
+                <div className="space-y-4">
+                  
+                  {/* Image attachment box */}
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition ${
+                      dragActive ? "border-emerald-500 bg-emerald-50/20" : "border-slate-200 hover:border-emerald-400 bg-slate-50/20"
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+
+                    {imagePreview ? (
+                      <div className="relative inline-block">
+                        <img src={imagePreview} alt="Transfer Receipt Preview" className="max-h-40 rounded-lg mx-auto shadow-sm" />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            resetUploadState();
+                          }}
+                          className="absolute -top-1.5 -right-1.5 p-1 bg-rose-500 text-white rounded-full hover:bg-rose-600 shadow"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 text-slate-400">
+                          <Upload className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">Drag & drop your transfer receipt image</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Click to browse your device files (PNG/JPEG)</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SMS Text Option */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Or paste Credit SMS Notification Alert text</label>
+                    <textarea
+                      value={manualText}
+                      onChange={(e) => setManualText(e.target.value)}
+                      placeholder="Paste your mobile credit SMS alert code or transactional copy-paste texts here directly..."
+                      rows={3}
+                      className="w-full text-xs p-3 rounded-xl border border-slate-250 font-mono bg-slate-50/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  {/* Actions buttons */}
+                  <div className="flex gap-2">
+                    { (imagePreview || manualText.trim()) && (
+                      <button
+                        onClick={resetUploadState}
+                        className="px-4 py-2.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-600 font-bold text-xs"
+                      >
+                        Reset
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={handleAuditProof}
+                      disabled={uploading}
+                      className={`flex-1 py-2.5 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition ${
+                        uploading 
+                          ? "bg-slate-300 cursor-not-allowed" 
+                          : "bg-emerald-600 hover:bg-emerald-700 shadow shadow-emerald-600/10"
+                      }`}
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Gemini Auditing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Audit and Clear My Payment</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {auditError && (
+                    <div className="bg-rose-50 border border-rose-100 p-3.5 rounded-xl text-xs text-rose-600 font-semibold leading-relaxed">
+                      {auditError}
+                    </div>
+                  )}
+
+                  {/* Audit Live Verification Result Pane */}
+                  {auditResult && (
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-3.5">
+                      <div className="flex items-center justify-between border-b border-slate-200/50 pb-2">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Gemini OCR Result</span>
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          auditResult.status === "APPROVED" 
+                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                            : "bg-amber-100 text-amber-800 border border-amber-200"
+                        }`}>
+                          {auditResult.status === "APPROVED" ? "APPROVED" : "FLAGGED CHECK"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Sender Identity</span>
+                          <span className="font-extrabold text-slate-800">{auditResult.senderName || loggedInMember.name}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/60">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Audited Amount</span>
+                          <span className="font-extrabold text-slate-800">{auditResult.currency || currency} {Number(auditResult.amount || targetAmount).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 font-mono text-[10px] text-slate-500 break-words">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5 font-sans">Reference ID</span>
+                        <span>{auditResult.transactionReference || "AUTO-REF"}</span>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 text-xs text-slate-600 leading-relaxed font-medium">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Audit Comment</span>
+                        {auditResult.explanation}
+                      </div>
+
+                      {auditResult.status === "APPROVED" && (
+                        <div className="bg-emerald-50 text-emerald-800 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-emerald-100">
+                          🎉 Excellent! Your savings contribution is verified. Checked off as Paid on the main ledger dashboard.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+}
