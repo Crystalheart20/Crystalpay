@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Member, ContributionMonth } from "../types";
 import { 
   ShieldCheck, 
@@ -50,6 +50,18 @@ export default function MemberPortal({
     }
     return localStorage.getItem("ajo_member_session") || "";
   });
+
+  // Sync session once async members load from Firebase
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlMemberId = params.get("memberId");
+    if (urlMemberId && members.some(m => m.id === urlMemberId)) {
+      if (loggedInMemberId !== urlMemberId) {
+        setLoggedInMemberId(urlMemberId);
+        localStorage.setItem("ajo_member_session", urlMemberId);
+      }
+    }
+  }, [members, loggedInMemberId]);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
 
   // Selected Recipient for contribution

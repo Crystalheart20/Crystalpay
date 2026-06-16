@@ -9,16 +9,8 @@ import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, C
 import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
-// Seed default members for the Rotating Savings (Ajo) system to pre-exist
-const INITIAL_MEMBERS: Member[] = [
-  { id: "mem-1", name: "Chikodi Nwankwo", phone: "+234 803 111 2222", bankName: "GTBank", accountNo: "0123456789", accountName: "Chikodi Nwankwo", collectedMonths: ["2026-04"], isActive: true },
-  { id: "mem-2", name: "Funmi Adebayo", phone: "+234 812 333 4444", bankName: "Zenith Bank", accountNo: "2233445566", accountName: "Funmi Adebayo", collectedMonths: ["2026-05"], isActive: true },
-  { id: "mem-3", name: "Ibrahim Musa", phone: "+234 905 555 6666", bankName: "Access Bank", accountNo: "5566778899", accountName: "Ibrahim Musa", collectedMonths: [], isActive: true },
-  { id: "mem-4", name: "Ngozi Okafor", phone: "+234 809 777 8888", bankName: "United Bank for Africa (UBA)", accountNo: "1029384756", accountName: "Ngozi Okafor", collectedMonths: [], isActive: true },
-  { id: "mem-5", name: "Tunde Bakare", phone: "+234 815 999 0000", bankName: "First Bank", accountNo: "9080706050", accountName: "Tunde Bakare", collectedMonths: [], isActive: true },
-  { id: "mem-6", name: "Amara Nwachukwu", phone: "+234 810 123 4567", bankName: "Fidelity Bank", accountNo: "1122334455", accountName: "Amara Nwachukwu", collectedMonths: [], isActive: true },
-  { id: "mem-7", name: "Yusuf Alabi", phone: "+234 902 987 6543", bankName: "Sterling Bank", accountNo: "7788990011", accountName: "Yusuf Alabi", collectedMonths: [], isActive: true },
-];
+// Zero-out default / seed lists to start in pure self-service mode (no mock data)
+const INITIAL_MEMBERS: Member[] = [];
 
 const INITIAL_MONTHS: ContributionMonth[] = [
   {
@@ -26,19 +18,25 @@ const INITIAL_MONTHS: ContributionMonth[] = [
     name: "June 2026",
     targetAmountPerMember: 100000,
     recipientsCount: 1,
-    recipients: ["mem-3"], // Ibrahim Musa was picked previously or represents current winner
+    recipients: [], // Start without default mock winners
     status: "ACTIVE",
-    payments: [
-      { memberId: "mem-1", amount: 100000, date: "2026-06-05", transactionRef: "REF-GTB-4819741", senderAccountName: "Chikodi Nwankwo", verifiedByAI: true },
-      { memberId: "mem-2", amount: 100000, date: "2026-06-08", transactionRef: "REF-ZNT-6490134", senderAccountName: "Funmi Adebayo", verifiedByAI: true }
-    ]
+    payments: [] // Start without default mock payments
   }
 ];
 
 export default function App() {
   const [members, setMembers] = useState<Member[]>(() => {
     const saved = localStorage.getItem("ajo_members");
-    return saved ? JSON.parse(saved) : INITIAL_MEMBERS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Member[];
+        const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
+        return parsed.filter(m => !mockIds.includes(m.id));
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
   });
 
   const [months, setMonths] = useState<ContributionMonth[]>(() => {
@@ -46,16 +44,16 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as ContributionMonth[];
-        // Auto-migrate "10000" (the previous default) to "100000" (100,000 NGN) to meet updated guidelines
+        const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
         return parsed.map(m => {
-          if (m.targetAmountPerMember === 10000) {
-            return {
-              ...m,
-              targetAmountPerMember: 100000,
-              payments: m.payments.map(p => p.amount === 10000 ? { ...p, amount: 100000 } : p)
-            };
-          }
-          return m;
+          const cleanRecipients = m.recipients.filter(r => !mockIds.includes(r));
+          const cleanPayments = m.payments.filter(p => !mockIds.includes(p.memberId));
+          return {
+            ...m,
+            targetAmountPerMember: m.targetAmountPerMember === 10000 ? 100000 : m.targetAmountPerMember,
+            recipients: cleanRecipients,
+            payments: cleanPayments.map(p => p.amount === 10000 ? { ...p, amount: 100000 } : p)
+          };
         });
       } catch (e) {
         return INITIAL_MONTHS;
@@ -78,19 +76,31 @@ export default function App() {
   });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
 
-  // Sycnrhonize with central Firestore cloud database
+  // Synchronize with central Firestore cloud database and purge synthetic mock members
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "members"), (snapshot) => {
       const list: Member[] = [];
       snapshot.forEach((doc) => {
         list.push(doc.data() as Member);
       });
-      if (list.length > 0) {
-        setMembers(list);
-      } else {
-        INITIAL_MEMBERS.forEach(m => {
-          setDoc(doc(db, "members", m.id), m);
+      
+      const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
+      const containsMock = list.some(m => mockIds.includes(m.id));
+      if (containsMock) {
+        // Deep purge from Firestore
+        list.forEach(async (m) => {
+          if (mockIds.includes(m.id)) {
+            try {
+              await deleteDoc(doc(db, "members", m.id));
+            } catch (e) {
+              console.error("Purge member error: ", e);
+            }
+          }
         });
+        const cleaned = list.filter(m => !mockIds.includes(m.id));
+        setMembers(cleaned);
+      } else {
+        setMembers(list);
       }
     });
     return () => unsubscribe();
@@ -102,11 +112,43 @@ export default function App() {
       snapshot.forEach((doc) => {
         list.push(doc.data() as ContributionMonth);
       });
-      if (list.length > 0) {
-        setMonths(list.sort((a, b) => a.id.localeCompare(b.id)));
+      
+      const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
+      let modified = false;
+      const sorted = list.sort((a, b) => a.id.localeCompare(b.id));
+      const cleanedList = sorted.map(mon => {
+        const hasMockRecipient = mon.recipients.some(rId => mockIds.includes(rId));
+        const hasMockPayment = mon.payments.some(p => mockIds.includes(p.memberId));
+        if (hasMockRecipient || hasMockPayment) {
+          modified = true;
+          return {
+            ...mon,
+            recipients: mon.recipients.filter(rId => !mockIds.includes(rId)),
+            payments: mon.payments.filter(p => !mockIds.includes(p.memberId))
+          };
+        }
+        return mon;
+      });
+
+      if (modified) {
+        cleanedList.forEach(async (mon) => {
+          try {
+            await setDoc(doc(db, "months", mon.id), mon);
+          } catch (e) {
+            console.error("Purge month references error: ", e);
+          }
+        });
+      }
+
+      if (cleanedList.length > 0) {
+        setMonths(cleanedList);
       } else {
-        INITIAL_MONTHS.forEach(m => {
-          setDoc(doc(db, "months", m.id), m);
+        INITIAL_MONTHS.forEach(async (m) => {
+          try {
+            await setDoc(doc(db, "months", m.id), m);
+          } catch (e) {
+            console.error("Seed clean months error: ", e);
+          }
         });
       }
     });
