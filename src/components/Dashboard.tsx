@@ -53,6 +53,14 @@ export default function Dashboard({
   const [generatedMessage, setGeneratedMessage] = useState("");
   const [generatingType, setGeneratingType] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
+
+  const handleCopyMemberLink = (mId: string) => {
+    const link = window.location.origin + window.location.pathname + `?role=member&memberId=${mId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedMemberId(mId);
+    setTimeout(() => setCopiedMemberId(null), 2000);
+  };
   
   const totalRecipients = currentMonth ? currentMonth.recipients.length : 0;
   
@@ -409,6 +417,17 @@ export default function Dashboard({
                             })}
                           </div>
                         )}
+                        <button
+                          onClick={() => handleCopyMemberLink(m.id)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 transition inline-block align-middle mr-2"
+                          title="Copy direct portal link for this member"
+                        >
+                          {copiedMemberId === m.id ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                         <button
                           onClick={() => onRemoveMember(m.id)}
                           className="p-1 text-slate-400 hover:text-rose-600 transition inline-block align-middle"

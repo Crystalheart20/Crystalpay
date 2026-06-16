@@ -6,6 +6,8 @@ import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2 } from "lucide-react";
+import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { db } from "./firebase";
 
 // Seed default members for the Rotating Savings (Ajo) system to pre-exist
 const INITIAL_MEMBERS: Member[] = [
@@ -76,6 +78,41 @@ export default function App() {
   });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
 
+  // Sycnrhonize with central Firestore cloud database
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "members"), (snapshot) => {
+      const list: Member[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as Member);
+      });
+      if (list.length > 0) {
+        setMembers(list);
+      } else {
+        INITIAL_MEMBERS.forEach(m => {
+          setDoc(doc(db, "members", m.id), m);
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "months"), (snapshot) => {
+      const list: ContributionMonth[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as ContributionMonth);
+      });
+      if (list.length > 0) {
+        setMonths(list.sort((a, b) => a.id.localeCompare(b.id)));
+      } else {
+        INITIAL_MONTHS.forEach(m => {
+          setDoc(doc(db, "months", m.id), m);
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem("ajo_members", JSON.stringify(members));
   }, [members]);
@@ -95,31 +132,69 @@ export default function App() {
   });
 
   // Action: Add/Register a New Member
-  const handleAddMember = (newMem: Omit<Member, "id" | "collectedMonths" | "isActive">) => {
+  const handleAddMember = async (newMem: Omit<Member, "id" | "collectedMonths" | "isActive">) => {
+    const freshId = "mem-" + Date.now();
     const fresh: Member = {
       ...newMem,
-      id: "mem-" + Date.now(),
+      id: freshId,
       collectedMonths: [],
       isActive: true
     };
-    setMembers(prev => [...prev, fresh]);
+    try {
+      await setDoc(doc(db, "members", freshId), fresh);
+    } catch (e) {
+      console.error(e);
+      setMembers(prev => [...prev, fresh]);
+    }
   };
 
   // Action: Remove/Delete member
-  const handleRemoveMember = (id: string) => {
-    setMembers(prev => prev.filter(m => m.id !== id));
-    // Clean up payment logs and recipient slots for deleted members to keep database pristine
-    setMonths(prev => prev.map(m => ({
-      ...m,
-      recipients: m.recipients.filter(rId => rId !== id),
-      payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
-    })));
+  const handleRemoveMember = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "members", id));
+      const updatedMonths = months.map(m => ({
+        ...m,
+        recipients: m.recipients.filter(rId => rId !== id),
+        payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
+      }));
+      for (const m of updatedMonths) {
+        await setDoc(doc(db, "months", m.id), m);
+      }
+    } catch (e) {
+      console.error(e);
+      setMembers(prev => prev.filter(m => m.id !== id));
+      setMonths(prev => prev.map(m => ({
+        ...m,
+        recipients: m.recipients.filter(rId => rId !== id),
+        payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
+      })));
+    }
   };
 
   // Action: Reset entire application to pristine start
-  const handleResetToPristine = () => {
+  const handleResetToPristine = async () => {
     localStorage.removeItem("ajo_members");
     localStorage.removeItem("ajo_months");
+    try {
+      for (const m of members) {
+        await deleteDoc(doc(db, "members", m.id));
+      }
+      for (const mon of months) {
+        await deleteDoc(doc(db, "months", mon.id));
+      }
+      const defaultMonth: ContributionMonth = {
+        id: "2026-06",
+        name: "June 2026",
+        targetAmountPerMember: 100000,
+        recipientsCount: 1,
+        recipients: [],
+        status: "ACTIVE" as const,
+        payments: []
+      };
+      await setDoc(doc(db, "months", "2026-06"), defaultMonth);
+    } catch (e) {
+      console.error(e);
+    }
     setMembers([]);
     setMonths([
       {
@@ -136,8 +211,8 @@ export default function App() {
   };
 
   // Action: Set/configure current round variables
-  const handleConfigureMonth = (amount: number, spots: 1 | 2, currencyCode: string) => {
-    setMonths(prev => prev.map(m => {
+  const handleConfigureMonth = async (amount: number, spots: 1 | 2, currencyCode: string) => {
+    const updated = months.map(m => {
       if (m.id === currentMonthId) {
         return {
           ...m,
@@ -146,62 +221,79 @@ export default function App() {
         };
       }
       return m;
-    }));
+    });
+    const currentM = updated.find(m => m.id === currentMonthId);
+    if (currentM) {
+      try {
+        await setDoc(doc(db, "months", currentMonthId), currentM);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   };
 
   // Action: Record payment verified (manually or through Gemini OCR)
-  const handleRecordPayment = (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
-    setMonths(prev => prev.map(m => {
-      if (m.id === currentMonthId) {
-        // Prevent duplicate payment entry log for this recipient
-        const targetRecipient = recipientId || m.recipients[0];
-        const exists = m.payments.some(p => p.memberId === memberId && p.recipientId === targetRecipient);
-        if (exists) return m;
+  const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+    const targetRecipient = recipientId || targetMonth.recipients[0];
+    const exists = targetMonth.payments.some(p => p.memberId === memberId && p.recipientId === targetRecipient);
+    if (exists) return;
 
-        const newPayment: PaymentLog = {
-          memberId,
-          amount,
-          date: new Date().toISOString().split('T')[0],
-          transactionRef: ref,
-          senderAccountName: senderName || "Verified Member",
-          verifiedByAI: true,
-          recipientId: targetRecipient
-        };
+    const newPayment: PaymentLog = {
+      memberId,
+      amount,
+      date: new Date().toISOString().split('T')[0],
+      transactionRef: ref,
+      senderAccountName: senderName || "Verified Member",
+      verifiedByAI: true,
+      recipientId: targetRecipient
+    };
 
-        return {
-          ...m,
-          payments: [...m.payments, newPayment]
-        };
-      }
-      return m;
-    }));
+    const updatedMonth: ContributionMonth = {
+      ...targetMonth,
+      payments: [...targetMonth.payments, newPayment]
+    };
+
+    try {
+      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Action: Approve Ballot Wheel Selection
-  const handleApproveBallotSelection = (selectedWinners: Member[]) => {
+  const handleApproveBallotSelection = async (selectedWinners: Member[]) => {
     const winnerIds = selectedWinners.map(w => w.id);
     
     // Update active month recipients list
-    setMonths(prev => prev.map(mon => {
-      if (mon.id === currentMonthId) {
-        return {
-          ...mon,
-          recipients: winnerIds
-        };
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (targetMonth) {
+      const updatedMonth: ContributionMonth = {
+        ...targetMonth,
+        recipients: winnerIds
+      };
+      try {
+        await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+      } catch (e) {
+        console.error(e);
       }
-      return mon;
-    }));
+    }
 
-    // Mark winner histories
-    setMembers(prev => prev.map(m => {
+    // Mark winner histories in members
+    for (const m of members) {
       if (winnerIds.includes(m.id)) {
-        return {
+        const updatedMem: Member = {
           ...m,
           collectedMonths: [...m.collectedMonths, currentMonthId]
         };
+        try {
+          await setDoc(doc(db, "members", m.id), updatedMem);
+        } catch (e) {
+          console.error(e);
+        }
       }
-      return m;
-    }));
+    }
 
     // Trigger notification packet mock in chat
     const winnersStr = selectedWinners.map(w => `*${w.name}*`).join(" and ");
@@ -220,73 +312,87 @@ export default function App() {
   };
 
   // Action: Toggle / Manual overriding confirmation
-  const handleManualPayment = (memberId: string, approved: boolean, recipientId?: string) => {
-    setMonths(prev => prev.map(m => {
-      if (m.id === currentMonthId) {
-        if (approved) {
-          // If recipientId is specified, only pay them, otherwise pay all winners this member owes
-          const recipientsToPay = recipientId ? [recipientId] : m.recipients.filter(rId => rId !== memberId);
-          
-          let newPayments = [...m.payments];
-          recipientsToPay.forEach(targetRecId => {
-            const exists = newPayments.some(p => p.memberId === memberId && p.recipientId === targetRecId);
-            if (!exists) {
-              newPayments.push({
-                memberId,
-                amount: m.targetAmountPerMember,
-                date: new Date().toISOString().split('T')[0],
-                transactionRef: "OVERRIDE-" + Math.floor(Math.random() * 100000),
-                senderAccountName: "System Approved",
-                verifiedByAI: false,
-                recipientId: targetRecId
-              });
-            }
+  const handleManualPayment = async (memberId: string, approved: boolean, recipientId?: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+
+    let updatedMonth: ContributionMonth;
+
+    if (approved) {
+      // If recipientId is specified, only pay them, otherwise pay all winners this member owes
+      const recipientsToPay = recipientId ? [recipientId] : targetMonth.recipients.filter(rId => rId !== memberId);
+      
+      let newPayments = [...targetMonth.payments];
+      recipientsToPay.forEach(targetRecId => {
+        const exists = newPayments.some(p => p.memberId === memberId && p.recipientId === targetRecId);
+        if (!exists) {
+          newPayments.push({
+            memberId,
+            amount: targetMonth.targetAmountPerMember,
+            date: new Date().toISOString().split('T')[0],
+            transactionRef: "OVERRIDE-" + Math.floor(Math.random() * 100000),
+            senderAccountName: "System Approved",
+            verifiedByAI: false,
+            recipientId: targetRecId
           });
-          
-          return {
-            ...m,
-            payments: newPayments
-          };
-        } else {
-          // Clear payment manual override
-          return {
-            ...m,
-            payments: recipientId
-              ? m.payments.filter(p => !(p.memberId === memberId && p.recipientId === recipientId))
-              : m.payments.filter(p => p.memberId !== memberId)
-          };
         }
-      }
-      return m;
-    }));
+      });
+      
+      updatedMonth = {
+        ...targetMonth,
+        payments: newPayments
+      };
+    } else {
+      updatedMonth = {
+        ...targetMonth,
+        payments: recipientId
+          ? targetMonth.payments.filter(p => !(p.memberId === memberId && p.recipientId === recipientId))
+          : targetMonth.payments.filter(p => p.memberId !== memberId)
+      };
+    }
+
+    try {
+      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Action: Confirm pot payout receipt by winning member
-  const handleConfirmPayoutReceipt = (memberId: string, monthId: string) => {
-    setMonths(prev => prev.map(m => {
-      if (m.id === monthId) {
-        const confirmed = m.payoutConfirmedByRecipients || [];
-        if (confirmed.includes(memberId)) return m;
-        return {
-          ...m,
-          payoutConfirmedByRecipients: [...confirmed, memberId]
-        };
-      }
-      return m;
-    }));
+  const handleConfirmPayoutReceipt = async (memberId: string, monthId: string) => {
+    const targetMonth = months.find(m => m.id === monthId);
+    if (!targetMonth) return;
+
+    const confirmed = targetMonth.payoutConfirmedByRecipients || [];
+    if (confirmed.includes(memberId)) return;
+
+    const updatedMonth: ContributionMonth = {
+      ...targetMonth,
+      payoutConfirmedByRecipients: [...confirmed, memberId]
+    };
+
+    try {
+      await setDoc(doc(db, "months", monthId), updatedMonth);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Action: Complete and close existing month pool
-  const handleCloseRound = () => {
-    setMonths(prev => prev.map(m => {
-      if (m.id === currentMonthId) {
-        return {
-          ...m,
-          status: "COMPLETED" as const
-        };
-      }
-      return m;
-    }));
+  const handleCloseRound = async () => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+
+    const updatedCurrentMonth: ContributionMonth = {
+      ...targetMonth,
+      status: "COMPLETED" as const
+    };
+
+    try {
+      await setDoc(doc(db, "months", currentMonthId), updatedCurrentMonth);
+    } catch (e) {
+      console.error(e);
+    }
 
     // Setup newly initialized following month automatically!
     const nextMonthId = "2026-07";
@@ -298,13 +404,17 @@ export default function App() {
       const nextMonthObj: ContributionMonth = {
         id: nextMonthId,
         name: nextMonthName,
-        targetAmountPerMember: currentMonth.targetAmountPerMember,
-        recipientsCount: currentMonth.recipientsCount,
+        targetAmountPerMember: targetMonth.targetAmountPerMember,
+        recipientsCount: targetMonth.recipientsCount,
         recipients: [],
         status: "ACTIVE" as const,
         payments: []
       };
-      setMonths(prev => [...prev, nextMonthObj]);
+      try {
+        await setDoc(doc(db, "months", nextMonthId), nextMonthObj);
+      } catch (e) {
+        console.error(e);
+      }
     }
     
     setCurrentMonthId(nextMonthId);

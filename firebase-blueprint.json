@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "members": {
+      "title": "Member",
+      "description": "A member registered in the Ajo contribution system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "bankName": { "type": "string" },
+        "accountNo": { "type": "string" },
+        "accountName": { "type": "string" },
+        "collectedMonths": { "type": "array" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "bankName", "accountNo"]
+    },
+    "months": {
+      "title": "ContributionMonth",
+      "description": "A monthly contribution cycle containing targets, recipients, and payments.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "targetAmountPerMember": { "type": "number" },
+        "recipientsCount": { "type": "number" },
+        "recipients": { "type": "array" },
+        "status": { "type": "string" },
+        "payments": { "type": "array" },
+        "payoutConfirmedByRecipients": { "type": "array" }
+      },
+      "required": ["id", "name", "targetAmountPerMember", "recipientsCount", "recipients", "status", "payments"]
+    }
+  },
+  "firestore": {
+    "/members/{memberId}": {
+      "schema": "members",
+      "description": "Collection of all system Ajo members"
+    },
+    "/months/{monthId}": {
+      "schema": "months",
+      "description": "Collection of contribution months"
+    }
+  }
+}

@@ -42,6 +42,12 @@ export default function MemberPortal({
 }: MemberPortalProps) {
   // Authentication & Session state
   const [loggedInMemberId, setLoggedInMemberId] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlMemberId = params.get("memberId");
+    if (urlMemberId && members.some(m => m.id === urlMemberId)) {
+      localStorage.setItem("ajo_member_session", urlMemberId);
+      return urlMemberId;
+    }
     return localStorage.getItem("ajo_member_session") || "";
   });
   const [isRegisterMode, setIsRegisterMode] = useState(false);
