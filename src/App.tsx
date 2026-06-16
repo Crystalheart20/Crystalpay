@@ -125,11 +125,12 @@ export default function App() {
   };
 
   // Action: Record payment verified (manually or through Gemini OCR)
-  const handleRecordPayment = (memberId: string, amount: number, ref: string, senderName?: string) => {
+  const handleRecordPayment = (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
     setMonths(prev => prev.map(m => {
       if (m.id === currentMonthId) {
-        // Prevent duplicate payment entry log
-        const exists = m.payments.some(p => p.memberId === memberId);
+        // Prevent duplicate payment entry log for this recipient
+        const targetRecipient = recipientId || m.recipients[0];
+        const exists = m.payments.some(p => p.memberId === memberId && p.recipientId === targetRecipient);
         if (exists) return m;
 
         const newPayment: PaymentLog = {
@@ -138,7 +139,8 @@ export default function App() {
           date: new Date().toISOString().split('T')[0],
           transactionRef: ref,
           senderAccountName: senderName || "Verified Member",
-          verifiedByAI: true
+          verifiedByAI: true,
+          recipientId: targetRecipient
         };
 
         return {
@@ -193,33 +195,40 @@ export default function App() {
   };
 
   // Action: Toggle / Manual overriding confirmation
-  const handleManualPayment = (memberId: string, approved: boolean) => {
+  const handleManualPayment = (memberId: string, approved: boolean, recipientId?: string) => {
     setMonths(prev => prev.map(m => {
       if (m.id === currentMonthId) {
         if (approved) {
-          // Add manually
-          const exists = m.payments.some(p => p.memberId === memberId);
-          if (exists) return m;
+          // If recipientId is specified, only pay them, otherwise pay all winners this member owes
+          const recipientsToPay = recipientId ? [recipientId] : m.recipients.filter(rId => rId !== memberId);
           
-          return {
-            ...m,
-            payments: [
-              ...m.payments,
-              {
+          let newPayments = [...m.payments];
+          recipientsToPay.forEach(targetRecId => {
+            const exists = newPayments.some(p => p.memberId === memberId && p.recipientId === targetRecId);
+            if (!exists) {
+              newPayments.push({
                 memberId,
                 amount: m.targetAmountPerMember,
                 date: new Date().toISOString().split('T')[0],
                 transactionRef: "OVERRIDE-" + Math.floor(Math.random() * 100000),
                 senderAccountName: "System Approved",
-                verifiedByAI: false
-              }
-            ]
-          };
-        } else {
-          // Remove manually
+                verifiedByAI: false,
+                recipientId: targetRecId
+              });
+            }
+          });
+          
           return {
             ...m,
-            payments: m.payments.filter(p => p.memberId !== memberId)
+            payments: newPayments
+          };
+        } else {
+          // Clear payment manual override
+          return {
+            ...m,
+            payments: recipientId
+              ? m.payments.filter(p => !(p.memberId === memberId && p.recipientId === recipientId))
+              : m.payments.filter(p => p.memberId !== memberId)
           };
         }
       }
@@ -448,7 +457,7 @@ export default function App() {
               currentMonthId={currentMonthId}
               currency="₦"
               onAddMember={handleAddMember}
-              onPaymentApproved={(mId, amt, ref, sName) => handleRecordPayment(mId, amt, ref, sName)}
+              onPaymentApproved={(mId, amt, ref, sName, rId) => handleRecordPayment(mId, amt, ref, sName, rId)}
               onConfirmPayoutReceipt={handleConfirmPayoutReceipt}
             />
           )}
@@ -481,7 +490,7 @@ export default function App() {
               members={members}
               expectedAmount={currentMonth?.targetAmountPerMember || 10000}
               currency="₦"
-              onPaymentApproved={(mId, amt, ref, sName) => handleRecordPayment(mId, amt, ref, sName)}
+              onPaymentApproved={(mId, amt, ref, sName, rId) => handleRecordPayment(mId, amt, ref, sName, rId)}
             />
           )}
 

@@ -21,6 +21,7 @@ export interface PaymentLog {
   transactionRef: string;
   senderAccountName?: string;
   verifiedByAI: boolean;
+  recipientId?: string; // The specific winner member receiving this payment
 }
 
 export interface ContributionMonth {

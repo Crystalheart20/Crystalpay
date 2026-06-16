@@ -6,7 +6,7 @@ interface ReceiptVerifierProps {
   members: Member[];
   expectedAmount: number;
   currency: string;
-  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string) => void;
+  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => void;
 }
 
 export default function ReceiptVerifier({

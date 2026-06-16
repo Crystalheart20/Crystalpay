@@ -10,7 +10,7 @@ interface DashboardProps {
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
   onRemoveMember: (id: string) => void;
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
-  onManualPayment: (memberId: string, approved: boolean) => void;
+  onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
   onCloseRound: () => void;
 }
 
@@ -56,22 +56,24 @@ export default function Dashboard({
   
   // Calculate dynamic stats
   const totalMembersCount = members.length;
-  const paidMembersCount = currentMonth 
-    ? members.filter(m => currentMonth.payments.some(p => p.memberId === m.id)).length
-    : 0;
-  const pendingMembersCount = totalMembersCount - paidMembersCount;
+  const activeRecipientsList = currentMonth 
+    ? members.filter(m => currentMonth.recipients.includes(m.id))
+    : [];
+
+  const targetAmount = currentMonth?.targetAmountPerMember || 100000;
   
-  const payoutGoal = currentMonth 
-    ? (currentMonth.targetAmountPerMember * (totalMembersCount - currentMonth.recipients.length))
-    : 0;
+  // Each recipient always collects NGN 100,000 contribution from all other (totalMembers - 1) group members.
+  // When there are 2 recipients, other members contribute 100,000 to each winner, and winners pay 100,000 to each other.
+  // Thus, the total transfers expected is recipients count * (totalMembers - 1).
+  const totalTransfersExpected = totalRecipients > 0 ? totalRecipients * (totalMembersCount - 1) : 0;
+  const payoutGoal = totalTransfersExpected * targetAmount;
 
   const currentPoolPaid = currentMonth 
     ? currentMonth.payments.reduce((sum, p) => sum + p.amount, 0)
     : 0;
 
-  const activeRecipientsList = currentMonth 
-    ? members.filter(m => currentMonth.recipients.includes(m.id))
-    : [];
+  const completedTransfers = currentMonth ? currentMonth.payments.length : 0;
+  const pendingTransfersCount = totalTransfersExpected - completedTransfers;
 
   const handleRegisterMember = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,12 +146,12 @@ export default function Dashboard({
         {/* Card 1: Total Pool size */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-tight">Pot Goal size</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-tight">Total Payout Goal</span>
             <h3 className="text-xl font-extrabold text-slate-800 mt-1">
               {currency} {payoutGoal.toLocaleString()}
             </h3>
             <p className="text-[10px] text-slate-400 mt-1">
-              {currency} {currentMonth?.targetAmountPerMember.toLocaleString()} × {totalMembersCount - (currentMonth?.recipients.length || 0)} members
+              {totalRecipients} Winner(s) × {currency}{(targetAmount * (totalMembersCount - 1)).toLocaleString()} per winner
             </p>
           </div>
           <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
@@ -173,15 +175,22 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Card 3: Paid members ratio */}
+        {/* Card 3: Payments ratio */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-tight">Audited Accounts</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-tight">Transfers Cleared</span>
             <h3 className="text-xl font-extrabold text-slate-800 mt-1">
-              {paidMembersCount} / {totalMembersCount} Paid
+              {completedTransfers} / {totalTransfersExpected} Cleared
             </h3>
             <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-              <Clock className="w-3 h-3 text-amber-500 animate-spin" /> {pendingMembersCount} outstanding invoices
+              {pendingTransfersCount > 0 ? (
+                <>
+                  <Clock className="w-3 h-3 text-amber-500 animate-spin" />
+                  <span>{pendingTransfersCount} outstanding transfers</span>
+                </>
+              ) : (
+                <span className="text-emerald-600 font-bold">✓ All contributions cleared!</span>
+              )}
             </p>
           </div>
           <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
@@ -313,8 +322,7 @@ export default function Dashboard({
               <tbody>
                 {members.map(m => {
                   const isRecipient = currentMonth?.recipients.includes(m.id);
-                  const isPaid = currentMonth?.payments.some(p => p.memberId === m.id);
-                  const paymentLog = currentMonth?.payments.find(p => p.memberId === m.id);
+                  const winnersOwed = activeRecipientsList.filter(w => w.id !== m.id);
 
                   return (
                     <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition">
@@ -325,7 +333,7 @@ export default function Dashboard({
                         </div>
                       </td>
                       <td className="py-3.5 font-mono">
-                        <div className="flex flex-col text-[10px] text-slate-500">
+                        <div className="flex flex-col text-[10px] text-slate-500 block">
                           <span className="font-semibold text-slate-700">{m.bankName}</span>
                           <span>{m.accountNo} • {m.accountName}</span>
                         </div>
@@ -344,35 +352,55 @@ export default function Dashboard({
                         )}
                       </td>
                       <td className="py-3.5">
-                        {isRecipient ? (
-                          <span className="text-rose-500 text-[10px] font-semibold">Exempted (Receiving)</span>
-                        ) : isPaid ? (
-                          <div className="flex flex-col">
-                            <span className="inline-flex text-emerald-800 font-semibold gap-1 items-center">
-                              ✅ Confirmed Alert
-                            </span>
-                            <span className="text-[9px] font-mono text-slate-400 truncate max-w-[100px]" title={paymentLog?.transactionRef}>
-                              Ref: {paymentLog?.transactionRef.slice(0, 8)}...
-                            </span>
-                          </div>
+                        {isRecipient && winnersOwed.length === 0 ? (
+                          <span className="text-rose-500 text-[10px] font-bold block">🏆 Exempted (Receiving Entire Pot)</span>
+                        ) : winnersOwed.length === 0 ? (
+                          <span className="text-slate-400 text-[10px]">⏳ No active draw</span>
                         ) : (
-                          <span className="inline-flex text-amber-500 font-bold items-center gap-1">
-                            ⏳ Outstanding
-                          </span>
+                          <div className="space-y-1.5">
+                            {winnersOwed.map(w => {
+                              const pLog = currentMonth?.payments.find(p => p.memberId === m.id && p.recipientId === w.id);
+                              return (
+                                <div key={w.id} className="flex flex-col text-[10.5px]">
+                                  <div className="flex items-center gap-1">
+                                    {pLog ? (
+                                      <span className="text-emerald-700 font-bold">✅ Paid ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
+                                    ) : (
+                                      <span className="text-amber-600 font-bold">⏳ Outstanding ₦{targetAmount.toLocaleString()}</span>
+                                    )}
+                                    <span className="text-slate-400 text-[9.5px]">to {w.name.split(" ")[0]}</span>
+                                  </div>
+                                  {pLog && (
+                                    <span className="text-[9px] font-mono text-slate-400 block -mt-0.5">
+                                      Ref: {pLog.transactionRef.slice(0, 8)}...
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </td>
-                      <td className="py-3.5 text-right space-x-1.5 whitespace-nowrap">
-                        {!isRecipient && (
-                          <button
-                            onClick={() => onManualPayment(m.id, !isPaid)}
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              isPaid 
-                                ? "bg-amber-50 text-amber-600 hover:bg-amber-100" 
-                                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                            }`}
-                          >
-                            {isPaid ? "Uncleared" : "Override Confirm"}
-                          </button>
+                      <td className="py-3.5 text-right space-y-1 whitespace-nowrap">
+                        {winnersOwed.length > 0 && (
+                          <div className="flex flex-col gap-1 items-end inline-block align-middle mr-2">
+                            {winnersOwed.map(w => {
+                              const hasPaidWinner = currentMonth?.payments.some(p => p.memberId === m.id && p.recipientId === w.id);
+                              return (
+                                <button
+                                  key={w.id}
+                                  onClick={() => onManualPayment(m.id, !hasPaidWinner, w.id)}
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold flex items-center gap-0.5 border ${
+                                    hasPaidWinner 
+                                      ? "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100" 
+                                      : "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+                                  }`}
+                                >
+                                  {hasPaidWinner ? `Uncleared to ${w.name.split(" ")[0]}` : `Clear to ${w.name.split(" ")[0]}`}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                         <button
                           onClick={() => onRemoveMember(m.id)}

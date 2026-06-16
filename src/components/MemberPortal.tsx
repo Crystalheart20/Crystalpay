@@ -27,7 +27,7 @@ interface MemberPortalProps {
   currentMonthId: string;
   currency: string;
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
-  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string) => void;
+  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => void;
   onConfirmPayoutReceipt: (memberId: string, monthId: string) => void;
 }
 
@@ -45,6 +45,9 @@ export default function MemberPortal({
     return localStorage.getItem("ajo_member_session") || "";
   });
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+
+  // Selected Recipient for contribution
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string>("");
 
   // Self Registration Form state
   const [regName, setRegName] = useState("");
@@ -182,6 +185,9 @@ export default function MemberPortal({
     setAuditError("");
     setAuditResult(null);
 
+    const winnersOwed = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
+    const targetRecipientId = selectedRecipientId || (winnersOwed.length > 0 ? winnersOwed[0].id : "");
+
     try {
       const response = await fetch("/api/verify-receipt", {
         method: "POST",
@@ -207,7 +213,8 @@ export default function MemberPortal({
           loggedInMemberId,
           auditData.amount || targetAmount,
           auditData.transactionReference || ("TXN-" + Date.now()),
-          auditData.senderName || loggedInMember?.name
+          auditData.senderName || loggedInMember?.name,
+          targetRecipientId
         );
       }
     } catch (err: any) {
@@ -229,6 +236,7 @@ export default function MemberPortal({
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedAccNo(id);
+    setSelectedRecipientId(id); // Auto-select this winner for transfer verification proof
     setTimeout(() => setCopiedAccNo(null), 1500);
   };
 
@@ -558,32 +566,83 @@ export default function MemberPortal({
               <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
                 <h4 className="font-bold text-slate-800 text-sm">Your Personal Contribution Ledger</h4>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-xl">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Payment Status</span>
-                    {hasPaidCurrentMonth ? (
-                      <span className="text-emerald-700 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
-                        <CheckCircle className="w-4 h-4 mt-0.5" /> PAID CONFIRMED
-                      </span>
-                    ) : (
-                      <span className="text-amber-600 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
-                        <AlertTriangle className="w-4 h-4 mt-0.5 animate-pulse" /> OUTSTANDING
-                      </span>
-                    )}
-                  </div>
+                {(() => {
+                  const winnersOwed = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
+                  const paymentsMade = currentMonth?.payments.filter(p => p.memberId === loggedInMemberId) || [];
+                  const isFullyPaid = winnersOwed.length > 0 && winnersOwed.every(w => paymentsMade.some(p => p.recipientId === w.id));
+                  const isExempt = winnersOwed.length === 0;
 
-                  <div className="bg-slate-50 p-4 rounded-xl">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Streaks Index</span>
-                    <span className="text-indigo-700 text-base font-extrabold mt-1 block">🏆 100% On-Time</span>
-                  </div>
-                </div>
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-4 rounded-xl">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Payment Status</span>
+                          {isExempt ? (
+                            <span className="text-rose-700 text-xs font-black mt-1 inline-flex items-center gap-1">
+                              🏆 EXEMPT (RECEIVING)
+                            </span>
+                          ) : isFullyPaid ? (
+                            <span className="text-emerald-700 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
+                              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 animate-bounce" /> FULLY PAID
+                            </span>
+                          ) : paymentsMade.length > 0 ? (
+                            <span className="text-amber-600 text-xs font-extrabold mt-1 inline-flex items-center gap-1 leading-snug">
+                              ⏳ PAID {paymentsMade.length}/{winnersOwed.length}
+                            </span>
+                          ) : (
+                            <span className="text-rose-500 text-xs font-extrabold mt-1 inline-flex items-center gap-1">
+                              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 animate-pulse" /> OUTSTANDING
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-xl">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Streaks Index</span>
+                          <span className="text-indigo-700 text-base font-extrabold mt-1 block">🏆 100% On-Time</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <h5 className="text-[10px] font-bold text-slate-400 uppercase">Transfer Status Checklist</h5>
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 space-y-2">
+                          {isExempt ? (
+                            <p className="text-xs text-slate-500 italic">No transfers due this month. You are collecting this month's savings pot!</p>
+                          ) : (
+                            winnersOwed.map(w => {
+                              const pLog = paymentsMade.find(p => p.recipientId === w.id);
+                              return (
+                                <div key={w.id} className="flex justify-between items-center text-xs pb-1.5 last:pb-0 border-b border-slate-200/50 last:border-0">
+                                  <div>
+                                    <p className="font-extrabold text-slate-700">{w.name}</p>
+                                    <p className="text-[10px] text-slate-400">{w.bankName} • ₦{targetAmount.toLocaleString()}</p>
+                                  </div>
+                                  <div>
+                                    {pLog ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold text-[10px]">
+                                        ✓ Paid
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-600 font-bold text-[10px] animate-pulse">
+                                        ⏳ Outstanding
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div className="space-y-2">
                   <h5 className="text-[10px] font-bold text-slate-400 uppercase">Ajo Rotation History</h5>
                   <div className="text-xs text-slate-600 divide-y divide-slate-100">
                     <div className="py-2 flex justify-between">
                       <span className="font-semibold text-slate-700">June 2026 Rotation</span>
-                      <span>{hasPaidCurrentMonth ? "Paid" : "Outstanding Invoice"}</span>
+                      <span>Processed</span>
                     </div>
                     {loggedInMember.collectedMonths.map(mon => (
                       <div key={mon} className="py-2 flex justify-between">
@@ -628,6 +687,29 @@ export default function MemberPortal({
                 {/* File Upload center */}
                 <div className="space-y-4">
                   
+                  {(() => {
+                    const winnersOwedStatus = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
+                    if (winnersOwedStatus.length <= 1) return null;
+                    return (
+                      <div className="bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100 flex flex-col gap-1.5 animate-fade-in text-xs">
+                        <label className="text-[10.5px] font-bold text-indigo-800 uppercase block tracking-wider">Recipient Target for this Transfer</label>
+                        <p className="text-[10px] text-slate-500">Specify which active monthly winner you spent this ₦{targetAmount.toLocaleString()} transfer on:</p>
+                        <select
+                          value={selectedRecipientId}
+                          onChange={(e) => setSelectedRecipientId(e.target.value)}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold focus:outline-none"
+                        >
+                          <option value="">-- Choice of Recipient --</option>
+                          {winnersOwedStatus.map(w => (
+                            <option key={w.id} value={w.id}>
+                              Recipient: {w.name} ({w.bankName})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
+
                   {/* Image attachment box */}
                   <div
                     onDragEnter={handleDrag}
