@@ -79,7 +79,7 @@ export default function MemberPortal({
     ? members.filter(m => currentMonth.recipients.includes(m.id))
     : [];
 
-  const targetAmount = currentMonth?.targetAmountPerMember || 10000;
+  const targetAmount = currentMonth?.targetAmountPerMember || 100000;
   
   // Checks if payment is already recorded for current member
   const hasPaidCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId);

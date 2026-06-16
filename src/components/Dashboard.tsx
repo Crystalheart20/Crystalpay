@@ -12,6 +12,7 @@ interface DashboardProps {
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
   onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
   onCloseRound: () => void;
+  onResetToPristine?: () => void;
 }
 
 export default function Dashboard({
@@ -23,7 +24,8 @@ export default function Dashboard({
   onRemoveMember,
   onConfigureMonth,
   onManualPayment,
-  onCloseRound
+  onCloseRound,
+  onResetToPristine
 }: DashboardProps) {
   // Member Registration State
   const [newMemberName, setNewMemberName] = useState("");
@@ -65,15 +67,20 @@ export default function Dashboard({
   // Each recipient always collects NGN 100,000 contribution from all other (totalMembers - 1) group members.
   // When there are 2 recipients, other members contribute 100,000 to each winner, and winners pay 100,000 to each other.
   // Thus, the total transfers expected is recipients count * (totalMembers - 1).
-  const totalTransfersExpected = totalRecipients > 0 ? totalRecipients * (totalMembersCount - 1) : 0;
+  const totalTransfersExpected = totalRecipients > 0 && totalMembersCount > 1 
+    ? totalRecipients * (totalMembersCount - 1) 
+    : 0;
   const payoutGoal = totalTransfersExpected * targetAmount;
 
-  const currentPoolPaid = currentMonth 
-    ? currentMonth.payments.reduce((sum, p) => sum + p.amount, 0)
-    : 0;
+  // Filter out any payments from deleted or non-registered members to prevent "ghost" stats
+  const activeMonthPayments = currentMonth 
+    ? currentMonth.payments.filter(p => members.some(m => m.id === p.memberId))
+    : [];
 
-  const completedTransfers = currentMonth ? currentMonth.payments.length : 0;
-  const pendingTransfersCount = totalTransfersExpected - completedTransfers;
+  const currentPoolPaid = activeMonthPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const completedTransfers = activeMonthPayments.length;
+  const pendingTransfersCount = Math.max(0, totalTransfersExpected - completedTransfers);
 
   const handleRegisterMember = (e: React.FormEvent) => {
     e.preventDefault();
@@ -546,6 +553,24 @@ export default function Dashboard({
               >
                 End Monthly Round
               </button>
+
+              {/* Reset to Fresh Database Button */}
+              {onResetToPristine && (
+                <div className="pt-4 border-t border-slate-100 mt-4 space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Reset &amp; Start Fresh</h4>
+                  <p className="text-[10px] text-slate-400 leading-snug">Wipe out all seed group members &amp; seed transactions to configure your own real savings circle from scratch.</p>
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to delete all members, reset current month parameters, and start completely fresh? This will clear browser cached seed data!")) {
+                        onResetToPristine();
+                      }
+                    }}
+                    className="w-full py-2 border border-rose-200 hover:bg-rose-50 text-rose-600 font-extrabold text-[11px] rounded-lg transition"
+                  >
+                    Wipe Seed Data &amp; Start Fresh
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -108,6 +108,31 @@ export default function App() {
   // Action: Remove/Delete member
   const handleRemoveMember = (id: string) => {
     setMembers(prev => prev.filter(m => m.id !== id));
+    // Clean up payment logs and recipient slots for deleted members to keep database pristine
+    setMonths(prev => prev.map(m => ({
+      ...m,
+      recipients: m.recipients.filter(rId => rId !== id),
+      payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
+    })));
+  };
+
+  // Action: Reset entire application to pristine start
+  const handleResetToPristine = () => {
+    localStorage.removeItem("ajo_members");
+    localStorage.removeItem("ajo_months");
+    setMembers([]);
+    setMonths([
+      {
+        id: "2026-06",
+        name: "June 2026",
+        targetAmountPerMember: 100000,
+        recipientsCount: 1,
+        recipients: [],
+        status: "ACTIVE" as const,
+        payments: []
+      }
+    ]);
+    setCurrentMonthId("2026-06");
   };
 
   // Action: Set/configure current round variables
@@ -473,6 +498,7 @@ export default function App() {
               onConfigureMonth={handleConfigureMonth}
               onManualPayment={handleManualPayment}
               onCloseRound={handleCloseRound}
+              onResetToPristine={handleResetToPristine}
             />
           )}
 
