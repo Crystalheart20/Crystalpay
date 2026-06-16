@@ -5,7 +5,7 @@ import BallotWheel from "./components/BallotWheel";
 import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
-import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User } from "lucide-react";
+import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2 } from "lucide-react";
 
 // Seed default members for the Rotating Savings (Ajo) system to pre-exist
 const INITIAL_MEMBERS: Member[] = [
@@ -22,13 +22,13 @@ const INITIAL_MONTHS: ContributionMonth[] = [
   {
     id: "2026-06",
     name: "June 2026",
-    targetAmountPerMember: 10000,
+    targetAmountPerMember: 100000,
     recipientsCount: 1,
     recipients: ["mem-3"], // Ibrahim Musa was picked previously or represents current winner
     status: "ACTIVE",
     payments: [
-      { memberId: "mem-1", amount: 10000, date: "2026-06-05", transactionRef: "REF-GTB-4819741", senderAccountName: "Chikodi Nwankwo", verifiedByAI: true },
-      { memberId: "mem-2", amount: 10000, date: "2026-06-08", transactionRef: "REF-ZNT-6490134", senderAccountName: "Funmi Adebayo", verifiedByAI: true }
+      { memberId: "mem-1", amount: 100000, date: "2026-06-05", transactionRef: "REF-GTB-4819741", senderAccountName: "Chikodi Nwankwo", verifiedByAI: true },
+      { memberId: "mem-2", amount: 100000, date: "2026-06-08", transactionRef: "REF-ZNT-6490134", senderAccountName: "Funmi Adebayo", verifiedByAI: true }
     ]
   }
 ];
@@ -41,11 +41,39 @@ export default function App() {
 
   const [months, setMonths] = useState<ContributionMonth[]>(() => {
     const saved = localStorage.getItem("ajo_months");
-    return saved ? JSON.parse(saved) : INITIAL_MONTHS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as ContributionMonth[];
+        // Auto-migrate "10000" (the previous default) to "100000" (100,000 NGN) to meet updated guidelines
+        return parsed.map(m => {
+          if (m.targetAmountPerMember === 10000) {
+            return {
+              ...m,
+              targetAmountPerMember: 100000,
+              payments: m.payments.map(p => p.amount === 10000 ? { ...p, amount: 100000 } : p)
+            };
+          }
+          return m;
+        });
+      } catch (e) {
+        return INITIAL_MONTHS;
+      }
+    }
+    return INITIAL_MONTHS;
   });
 
   const [currentMonthId, setCurrentMonthId] = useState<string>("2026-06");
-  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal">(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("role") === "member" || params.get("portal") === "true") {
+      return "portal";
+    }
+    return "dashboard";
+  });
+  const [isMemberOnlyUrl, setIsMemberOnlyUrl] = useState<boolean>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("role") === "member" || params.get("portal") === "true";
+  });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
 
   useEffect(() => {
@@ -249,6 +277,14 @@ export default function App() {
     setActiveTab("dashboard");
   };
 
+  const [copiedLink, setCopiedLink] = useState(false);
+  const handleCopyLink = () => {
+    const link = window.location.origin + window.location.pathname + "?role=member";
+    navigator.clipboard.writeText(link);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       
@@ -285,6 +321,67 @@ export default function App() {
       {/* Main Core Viewport area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
         
+        {/* Share Utility / Mode Banner */}
+        {!isMemberOnlyUrl ? (
+          <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-indigo-500/10 border border-indigo-150/50 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="space-y-1">
+              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <Share2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                Invite Members to the Portal
+              </span>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Send members their direct secure link so they bypass admin panels and open the <strong>Member Portal</strong> directly.
+              </p>
+            </div>
+            
+            <button
+              onClick={handleCopyLink}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition ${
+                copiedLink 
+                  ? "bg-emerald-600 text-white shadow font-semibold" 
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white shadow font-semibold"
+              }`}
+            >
+              {copiedLink ? (
+                <>
+                  <span>✓ Copied Link!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Copy Member Link</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="bg-amber-500/10 border border-amber-200/70 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
+            <div className="space-y-1">
+              <span className="font-extrabold text-amber-800 flex items-center gap-1.5">
+                👥 Member Only Access Mode
+              </span>
+              <p className="text-amber-700 leading-relaxed">
+                You are currently viewing the group's contribution portal as an end-member. Administrative tools are hidden.
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                setIsMemberOnlyUrl(false);
+                setActiveTab("dashboard");
+                // Remove parameter from URL history quietly
+                const url = new URL(window.location.href);
+                url.searchParams.delete("role");
+                url.searchParams.delete("portal");
+                window.history.pushState({}, "", url.toString());
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-extrabold transition text-[11px]"
+            >
+              🛠 Switch to Admin Mode (Demo)
+            </button>
+          </div>
+        )}
+
         {/* Navigation Tabs Bar */}
         <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-4xl gap-1">
           <button
@@ -297,45 +394,49 @@ export default function App() {
             <span>👥 Member Portal</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[125px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-200 ${
-              activeTab === "dashboard" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            <span>Admin Control Panel</span>
-          </button>
-          
-          <button
-            onClick={() => setActiveTab("ballot")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[110px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-              activeTab === "ballot" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <Award className="h-4 w-4" />
-            <span>Ballot Drawer</span>
-          </button>
+          {!isMemberOnlyUrl && (
+            <>
+              <button
+                onClick={() => setActiveTab("dashboard")}
+                className={`flex items-center gap-1.5 flex-1 min-w-[125px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-200 ${
+                  activeTab === "dashboard" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
+                }`}
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                <span>Admin Control Panel</span>
+              </button>
+              
+              <button
+                onClick={() => setActiveTab("ballot")}
+                className={`flex items-center gap-1.5 flex-1 min-w-[110px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+                  activeTab === "ballot" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
+                }`}
+              >
+                <Award className="h-4 w-4" />
+                <span>Ballot Drawer</span>
+              </button>
 
-          <button
-            onClick={() => setActiveTab("auditor")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[130px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-              activeTab === "auditor" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4" />
-            <span>Receipt Auditing OCR</span>
-          </button>
+              <button
+                onClick={() => setActiveTab("auditor")}
+                className={`flex items-center gap-1.5 flex-1 min-w-[130px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+                  activeTab === "auditor" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
+                }`}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>Receipt Auditing OCR</span>
+              </button>
 
-          <button
-            onClick={() => setActiveTab("whatsapp")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-              activeTab === "whatsapp" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span>WhatsApp group simulator</span>
-          </button>
+              <button
+                onClick={() => setActiveTab("whatsapp")}
+                className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
+                  activeTab === "whatsapp" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
+                }`}
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>WhatsApp group simulator</span>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Tab Viewport Routing Container */}

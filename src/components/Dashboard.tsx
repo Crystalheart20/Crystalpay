@@ -34,7 +34,7 @@ export default function Dashboard({
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Month Configuration State
-  const [amountInput, setAmountInput] = useState(20000);
+  const [amountInput, setAmountInput] = useState(100000);
   const [spotsInput, setSpotsInput] = useState<1 | 2>(1);
   const [currencyInput, setCurrencyInput] = useState("NGN");
 

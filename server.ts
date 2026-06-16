@@ -32,6 +32,36 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
+// Robust content generation helper with automatic fallback for high-demand 503 spikes
+async function generateContentWithFallback(
+  ai: GoogleGenAI,
+  options: {
+    contents: any;
+    config?: any;
+  }
+) {
+  // Try newer gemini-3.5-flash and fallback to stable gemini-flash-latest
+  const models = ["gemini-3.5-flash", "gemini-flash-latest"];
+  let lastError: any = null;
+
+  for (const modelName of models) {
+    try {
+      console.log(`[Gemini Engine] Querying model: ${modelName}`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: options.contents,
+        config: options.config,
+      });
+      return response;
+    } catch (err: any) {
+      console.warn(`[Gemini Engine] Model ${modelName} encountered an error:`, err.message || err);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("All Gemini models failed to generate content.");
+}
+
 // Ensure database/records can be simulated, persistent storage is synced in React's localstorage
 // but we provide processing servers.
 
@@ -116,8 +146,7 @@ Analyze the proof and extract:
 
     contentParts.push({ text: prompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateContentWithFallback(ai, {
       contents: contentParts,
       config: {
         responseMimeType: "application/json",
@@ -255,8 +284,7 @@ Details to craft into the template:
 
 Use bullet points where appropriate. Keep it clear, exciting, and extremely professional with no placeholder text. The message must be direct and copy-pasteable immediately by the user.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateContentWithFallback(ai, {
       contents: prompt,
       config: {
         temperature: 0.7
