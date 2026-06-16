@@ -72,11 +72,14 @@ export default function Dashboard({
 
   const targetAmount = currentMonth?.targetAmountPerMember || 100000;
   
-  // Each recipient always collects NGN 100,000 contribution from all other (totalMembers - 1) group members.
-  // When there are 2 recipients, other members contribute 100,000 to each winner, and winners pay 100,000 to each other.
+  // Calculate display recipient counts: falls back to target seats (e.g. 1) when ballot is pending
+  const displayRecipientsCount = totalRecipients > 0 ? totalRecipients : (currentMonth?.recipientsCount || 1);
+
+  // Each recipient always collects contribution from all other (totalMembers - 1) group members.
+  // When there are 2 recipients, other members contribute to each winner, and winners pay each other.
   // Thus, the total transfers expected is recipients count * (totalMembers - 1).
-  const totalTransfersExpected = totalRecipients > 0 && totalMembersCount > 1 
-    ? totalRecipients * (totalMembersCount - 1) 
+  const totalTransfersExpected = totalMembersCount > 1 
+    ? displayRecipientsCount * (totalMembersCount - 1) 
     : 0;
   const payoutGoal = totalTransfersExpected * targetAmount;
 
@@ -166,7 +169,13 @@ export default function Dashboard({
               {currency} {payoutGoal.toLocaleString()}
             </h3>
             <p className="text-[10px] text-slate-400 mt-1">
-              {totalRecipients} Winner(s) × {currency}{(targetAmount * (totalMembersCount - 1)).toLocaleString()} per winner
+              {totalMembersCount <= 1 ? (
+                "Needs at least 2 members registered"
+              ) : (
+                <>
+                  {totalRecipients > 0 ? `${totalRecipients} Active Winner(s)` : `${displayRecipientsCount} Target Slot(s)`} × {currency}{(targetAmount * (totalMembersCount - 1)).toLocaleString()} per winner
+                </>
+              )}
             </p>
           </div>
           <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
@@ -182,7 +191,7 @@ export default function Dashboard({
               {currency} {currentPoolPaid.toLocaleString()}
             </h3>
             <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-              {payoutGoal > 0 ? ((currentPoolPaid / payoutGoal) * 100).toFixed(0) : 0}% Complete
+              {payoutGoal > 0 ? `${((currentPoolPaid / payoutGoal) * 100).toFixed(0)}% Complete` : "0% Complete"}
             </p>
           </div>
           <div className="p-3 bg-teal-50 rounded-xl text-teal-600">
@@ -198,7 +207,11 @@ export default function Dashboard({
               {completedTransfers} / {totalTransfersExpected} Cleared
             </h3>
             <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-              {pendingTransfersCount > 0 ? (
+              {totalMembersCount <= 1 ? (
+                <span className="text-rose-500 font-medium">Add more group members</span>
+              ) : totalRecipients === 0 ? (
+                <span className="text-slate-500 font-medium">⏳ Awaiting Ballot draw</span>
+              ) : pendingTransfersCount > 0 ? (
                 <>
                   <Clock className="w-3 h-3 text-amber-500 animate-spin" />
                   <span>{pendingTransfersCount} outstanding transfers</span>
