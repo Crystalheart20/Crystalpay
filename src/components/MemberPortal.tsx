@@ -319,7 +319,39 @@ export default function MemberPortal({
   };
 
   // Compute calculated metrics
-  const poolSize = targetAmount * (members.length - currentMonth?.recipients.length);
+  const poolSize = targetAmount * (members.length - (currentMonth?.recipients.length || 0));
+
+  // Calculate this specific recipient's expected payout (half of total pool if 2 recipients, whole pool if 1)
+  const myExpectedPayout = (() => {
+    if (!currentMonth) return 0;
+    const totalRecipients = currentMonth.recipients.length;
+    if (totalRecipients === 0) return 0;
+    
+    // Total contributors (non-recipients)
+    const contributors = members.filter(m => !currentMonth.recipients.includes(m.id));
+    const totalPool = contributors.length * targetAmount;
+    
+    if (totalRecipients === 1) {
+      return totalPool;
+    }
+    
+    if (totalRecipients === 2) {
+      const sortedContributors = [...contributors].sort((a, b) => a.id.localeCompare(b.id));
+      const recipientIndex = currentMonth.recipients.indexOf(loggedInMemberId);
+      if (recipientIndex === -1) {
+        return totalPool / 2;
+      }
+      
+      const halfLimit = Math.ceil(sortedContributors.length / 2);
+      if (recipientIndex === 0) {
+        return halfLimit * targetAmount;
+      } else {
+        return (sortedContributors.length - halfLimit) * targetAmount;
+      }
+    }
+    
+    return totalPool / totalRecipients;
+  })();
 
   return (
     <div className="space-y-6">
@@ -601,7 +633,16 @@ export default function MemberPortal({
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    As this month's Rotational Ajo recipient, the total estimated savings pot size of <strong className="text-slate-800 font-bold">{currency} {poolSize.toLocaleString()}</strong> is being transferred directly to your bank account of record by the other members. 
+                    {currentMonth?.recipients.length === 2 ? (
+                      <>
+                        As one of this round's <strong>two active Ajo recipients</strong>, you share the total round contributions of <strong className="text-slate-800 font-bold">{currency} {poolSize.toLocaleString()}</strong>.
+                        Your half-share of the savings pot is exactly <strong className="text-slate-800 font-bold">{currency} {myExpectedPayout.toLocaleString()}</strong>, which is being transferred directly to your bank account of record by your assigned portion of group members.
+                      </>
+                    ) : (
+                      <>
+                        As this month's Rotational Ajo recipient, the total estimated savings pot size of <strong className="text-slate-800 font-bold">{currency} {poolSize.toLocaleString()}</strong> is being transferred directly to your bank account of record by the other members.
+                      </>
+                    )}
                   </p>
 
                   <div className="bg-white p-3.5 rounded-xl border border-amber-500/10 text-xs">

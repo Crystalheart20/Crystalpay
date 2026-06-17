@@ -172,9 +172,13 @@ export default function Dashboard({
             <p className="text-[10px] text-slate-400 mt-1">
               {totalMembersCount <= 1 ? (
                 "Needs at least 2 members registered"
+              ) : displayRecipientsCount === 2 ? (
+                <>
+                  Shared pool: 2 recipients share the total contributions, each getting half: {currency}{Math.floor((totalMembersCount - 2) / 2 * targetAmount).toLocaleString()} to {currency}{Math.ceil((totalMembersCount - 2) / 2 * targetAmount).toLocaleString()} depending on member-split assignment.
+                </>
               ) : (
                 <>
-                  {totalRecipients > 0 ? `${totalRecipients} Active Winner(s)` : `${displayRecipientsCount} Target Slot(s)`} × {currency}{(targetAmount * (totalMembersCount - 1)).toLocaleString()} per winner
+                  {totalRecipients > 0 ? `${totalRecipients} Active Winner(s)` : `${displayRecipientsCount} Target Slot(s)`} × {currency}{targetAmount.toLocaleString()} from {totalMembersCount - 1} members
                 </>
               )}
             </p>
