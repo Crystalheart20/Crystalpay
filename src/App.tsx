@@ -252,6 +252,46 @@ export default function App() {
     setCurrentMonthId("2026-06");
   };
 
+  // Action: Reset the ballot and payments for the current month
+  const handleResetBallot = async () => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+
+    const recipientIds = targetMonth.recipients || [];
+
+    // Reset month state: clear recipients, payments, and payouts confirmation
+    const updatedMonth: ContributionMonth = {
+      ...targetMonth,
+      recipients: [],
+      payments: [],
+      payoutConfirmedByRecipients: []
+    };
+
+    try {
+      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Clear winner histories in members for this month
+    for (const m of members) {
+      if (recipientIds.includes(m.id)) {
+        const updatedMem: Member = {
+          ...m,
+          collectedMonths: m.collectedMonths.filter(id => id !== currentMonthId)
+        };
+        try {
+          await setDoc(doc(db, "members", m.id), updatedMem);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    // Clear saved notifications for draws
+    setLastDrawNotice("");
+  };
+
   // Action: Set/configure current round variables
   const handleConfigureMonth = async (amount: number, spots: 1 | 2, currencyCode: string) => {
     const updated = months.map(m => {
@@ -629,6 +669,7 @@ export default function App() {
               onManualPayment={handleManualPayment}
               onCloseRound={handleCloseRound}
               onResetToPristine={handleResetToPristine}
+              onResetBallot={handleResetBallot}
             />
           )}
 

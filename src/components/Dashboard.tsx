@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Member, ContributionMonth, PaymentLog } from "../types";
-import { Users, Coins, ClipboardList, Send, Calendar, CheckCircle, Clock, Plus, Trash2, Edit2, AlertCircle, Sparkles, Copy, Check, ChevronRight } from "lucide-react";
+import { Users, Coins, ClipboardList, Send, Calendar, CheckCircle, Clock, Plus, Trash2, Edit2, AlertCircle, Sparkles, Copy, Check, ChevronRight, RotateCcw } from "lucide-react";
 
 interface DashboardProps {
   members: Member[];
@@ -13,6 +13,7 @@ interface DashboardProps {
   onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
   onCloseRound: () => void;
   onResetToPristine?: () => void;
+  onResetBallot?: () => void;
 }
 
 export default function Dashboard({
@@ -25,7 +26,8 @@ export default function Dashboard({
   onConfigureMonth,
   onManualPayment,
   onCloseRound,
-  onResetToPristine
+  onResetToPristine,
+  onResetBallot
 }: DashboardProps) {
   // Member Registration State
   const [newMemberName, setNewMemberName] = useState("");
@@ -545,6 +547,22 @@ export default function Dashboard({
               >
                 Apply Parameters
               </button>
+
+              {currentMonth && totalRecipients > 0 && onResetBallot && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("WARNING: Resetting the ballot will clear this month's elected recipients and reset all contribution payment logs. You will need to configure parameters, spin the wheel, and approve the new ballot again.\n\nAre you sure you want to reset the ballot?")) {
+                        onResetBallot();
+                      }
+                    }}
+                    className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition border border-rose-200"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Reset Ballot &amp; Payments
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
