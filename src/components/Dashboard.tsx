@@ -75,11 +75,12 @@ export default function Dashboard({
   // Calculate display recipient counts: falls back to target seats (e.g. 1) when ballot is pending
   const displayRecipientsCount = totalRecipients > 0 ? totalRecipients : (currentMonth?.recipientsCount || 1);
 
-  // Each recipient always collects contribution from all other (totalMembers - 1) group members.
-  // When there are 2 recipients, other members contribute to each winner, and winners pay each other.
-  // Thus, the total transfers expected is recipients count * (totalMembers - 1).
-  const totalTransfersExpected = totalMembersCount > 1 
-    ? displayRecipientsCount * (totalMembersCount - 1) 
+  // Under our split-recipient model:
+  // When there are 2 recipients, contributing members are divided in half. One half pays Recipient 1, and the other half pays Recipient 2.
+  // Recipients are exempt from contributing, so each contributor makes exactly 1 transfer.
+  // The total number of transfers expected is equal to the number of contributing members (Total Members - Recipients Count).
+  const totalTransfersExpected = totalMembersCount > displayRecipientsCount 
+    ? totalMembersCount - displayRecipientsCount 
     : 0;
   const payoutGoal = totalTransfersExpected * targetAmount;
 
@@ -350,7 +351,32 @@ export default function Dashboard({
               <tbody>
                 {members.map(m => {
                   const isRecipient = currentMonth?.recipients.includes(m.id);
-                  const winnersOwed = activeRecipientsList.filter(w => w.id !== m.id);
+                  const winnersOwed = (() => {
+                    if (!currentMonth) return [];
+                    if (currentMonth.recipients.includes(m.id)) return [];
+
+                    const recipients = members.filter(x => currentMonth.recipients.includes(x.id));
+                    if (recipients.length === 0) return [];
+                    if (recipients.length === 1) return recipients;
+
+                    if (recipients.length === 2) {
+                      const contributors = members
+                        .filter(x => !currentMonth.recipients.includes(x.id))
+                        .sort((a, b) => a.id.localeCompare(b.id));
+
+                      const myIndex = contributors.findIndex(c => c.id === m.id);
+                      if (myIndex === -1) return [recipients[0]];
+
+                      const halfLimit = Math.ceil(contributors.length / 2);
+                      if (myIndex < halfLimit) {
+                        return [recipients[0]];
+                      } else {
+                        return [recipients[1]];
+                      }
+                    }
+
+                    return recipients;
+                  })();
 
                   return (
                     <tr key={m.id} className="border-b border-slate-50 hover:bg-slate-50/40 transition">

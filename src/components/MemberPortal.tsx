@@ -98,6 +98,57 @@ export default function MemberPortal({
     : [];
 
   const targetAmount = currentMonth?.targetAmountPerMember || 100000;
+
+  // Get the recipient(s) that this specific member owes a contribution to this month (Deterministic split-pay)
+  const winnersOwed = (() => {
+    if (!currentMonth || !loggedInMemberId) return [];
+    
+    // If the logged-in member is featured as a recipient themselves, they are exempt!
+    if (currentMonth.recipients.includes(loggedInMemberId)) {
+      return [];
+    }
+
+    const recipients = members.filter(m => currentMonth.recipients.includes(m.id));
+    if (recipients.length === 0) return [];
+
+    if (recipients.length === 1) {
+      // Standard flow: everyone pays the single winner
+      return recipients;
+    }
+
+    if (recipients.length === 2) {
+      // 2 recipients split-billing flow:
+      // Sort non-recipient members (contributors) by ID to be perfectly deterministic across all portals
+      const contributors = members
+        .filter(m => !currentMonth.recipients.includes(m.id))
+        .sort((a, b) => a.id.localeCompare(b.id));
+
+      const myIndex = contributors.findIndex(c => c.id === loggedInMemberId);
+      if (myIndex === -1) {
+        // Fallback context: if not found, let them pay first recipient
+        return [recipients[0]];
+      }
+
+      const halfLimit = Math.ceil(contributors.length / 2);
+      if (myIndex < halfLimit) {
+        return [recipients[0]];
+      } else {
+        return [recipients[1]];
+      }
+    }
+
+    // Default general fallback
+    return recipients;
+  })();
+
+  // Auto-initialize selected recipient to the first assigned recipient
+  useEffect(() => {
+    if (winnersOwed.length > 0) {
+      setSelectedRecipientId(winnersOwed[0].id);
+    } else {
+      setSelectedRecipientId("");
+    }
+  }, [winnersOwed]);
   
   // Checks if payment is already recorded for current member
   const hasPaidCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId);
@@ -203,7 +254,6 @@ export default function MemberPortal({
     setAuditError("");
     setAuditResult(null);
 
-    const winnersOwed = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
     const targetRecipientId = selectedRecipientId || (winnersOwed.length > 0 ? winnersOwed[0].id : "");
 
     try {
@@ -491,12 +541,12 @@ export default function MemberPortal({
                   Please proceed with your monthly direct bank transfer of <strong className="text-slate-900 font-bold">{currency} {targetAmount.toLocaleString()}</strong> to the current rotational pot winners listed below. Drop screenshot proofs in the next box.
                 </p>
 
-                {activeRecipientsList.length > 0 ? (
+                {winnersOwed.length > 0 ? (
                   <div className="space-y-3.5">
-                    {activeRecipientsList.map((rec, i) => (
+                    {winnersOwed.map((rec, i) => (
                       <div key={rec.id} className="relative bg-slate-50/50 p-4 rounded-xl border border-slate-200/55 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div className="space-y-1">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Pot Winner Recipient {i+1}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Your Assigned Recipient</span>
                           <span className="text-sm font-extrabold text-slate-800 block">{rec.name}</span>
                           <div className="font-mono text-xs text-slate-500 space-y-0.5">
                             <p className="font-bold text-slate-600">{rec.bankName}</p>
@@ -523,6 +573,14 @@ export default function MemberPortal({
                         </button>
                       </div>
                     ))}
+                  </div>
+                ) : isSelectedRecipientThisMonth ? (
+                  <div className="text-center p-6 bg-emerald-50 rounded-xl border border-emerald-100/60 shadow-inner flex flex-col justify-center items-center gap-2">
+                    <Trophy className="mx-auto h-8 w-8 text-emerald-600 animate-bounce" />
+                    <p className="text-xs text-emerald-800 font-extrabold uppercase tracking-wide">🎉 Recipient Exemption!</p>
+                    <p className="text-xs text-emerald-600 leading-normal max-w-sm mx-auto">
+                      Since you are a savings pot recipient for this round, you are exempt from making contributions! The other assigned group members will pay you directly.
+                    </p>
                   </div>
                 ) : (
                   <div className="text-center p-6 bg-slate-50 rounded-xl">
@@ -585,7 +643,6 @@ export default function MemberPortal({
                 <h4 className="font-bold text-slate-800 text-sm">Your Personal Contribution Ledger</h4>
 
                 {(() => {
-                  const winnersOwed = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
                   const paymentsMade = currentMonth?.payments.filter(p => p.memberId === loggedInMemberId) || [];
                   const isFullyPaid = winnersOwed.length > 0 && winnersOwed.every(w => paymentsMade.some(p => p.recipientId === w.id));
                   const isExempt = winnersOwed.length === 0;
@@ -706,7 +763,7 @@ export default function MemberPortal({
                 <div className="space-y-4">
                   
                   {(() => {
-                    const winnersOwedStatus = activeRecipientsList.filter(w => w.id !== loggedInMemberId);
+                    const winnersOwedStatus = winnersOwed;
                     if (winnersOwedStatus.length <= 1) return null;
                     return (
                       <div className="bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100 flex flex-col gap-1.5 animate-fade-in text-xs">
