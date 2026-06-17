@@ -24,7 +24,7 @@ export default function BallotWheel({
   const [ballotReport, setBallotReport] = useState("");
   const [selectedPayoutCount, setSelectedPayoutCount] = useState<number>(1);
 
-  const maxPossibleDraw = Math.min(payoutCount, eligibleMembers.length);
+  const maxPossibleDraw = Math.min(2, eligibleMembers.length);
 
   useEffect(() => {
     if (selectedPayoutCount > maxPossibleDraw && maxPossibleDraw > 0) {
