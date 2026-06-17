@@ -544,33 +544,7 @@ export default function App() {
               )}
             </button>
           </div>
-        ) : (
-          <div className="bg-amber-500/10 border border-amber-200/70 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
-            <div className="space-y-1">
-              <span className="font-extrabold text-amber-800 flex items-center gap-1.5">
-                👥 Member Only Access Mode
-              </span>
-              <p className="text-amber-700 leading-relaxed">
-                You are currently viewing the group's contribution portal as an end-member. Administrative tools are hidden.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                setIsMemberOnlyUrl(false);
-                setActiveTab("dashboard");
-                // Remove parameter from URL history quietly
-                const url = new URL(window.location.href);
-                url.searchParams.delete("role");
-                url.searchParams.delete("portal");
-                window.history.pushState({}, "", url.toString());
-              }}
-              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-extrabold transition text-[11px]"
-            >
-              🛠 Switch to Admin Mode (Demo)
-            </button>
-          </div>
-        )}
+        ) : null}
 
         {/* Navigation Tabs Bar */}
         <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-4xl gap-1">
