@@ -22,6 +22,15 @@ export default function BallotWheel({
   const [selectedWinners, setSelectedWinners] = useState<Member[]>([]);
   const [copied, setCopied] = useState(false);
   const [ballotReport, setBallotReport] = useState("");
+  const [selectedPayoutCount, setSelectedPayoutCount] = useState<number>(1);
+
+  const maxPossibleDraw = Math.min(payoutCount, eligibleMembers.length);
+
+  useEffect(() => {
+    if (selectedPayoutCount > maxPossibleDraw && maxPossibleDraw > 0) {
+      setSelectedPayoutCount(maxPossibleDraw);
+    }
+  }, [maxPossibleDraw, selectedPayoutCount]);
 
   // Synthetic sound fx using Web Audio API
   const playSound = (freq: number, type: OscillatorType, duration: number) => {
@@ -65,7 +74,7 @@ export default function BallotWheel({
       } else {
         // Select winners!
         const winners: Member[] = [];
-        const countToDraft = Math.min(payoutCount, eligibleMembers.length);
+        const countToDraft = Math.min(selectedPayoutCount, eligibleMembers.length);
         
         // Randomly grab from eligible pool
         const poolCopy = [...eligibleMembers];
@@ -174,17 +183,42 @@ export default function BallotWheel({
               ))}
             </div>
 
+            {/* Draw count selector */}
+            <div className="mt-4 w-full bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col gap-1.5 align-start text-left">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Draw Size (This spin)</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[1, 2].map((num) => {
+                  const isAvailable = num <= eligibleMembers.length;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      disabled={isSpinning || !isAvailable}
+                      onClick={() => setSelectedPayoutCount(num)}
+                      className={`py-1.5 rounded-lg text-xs font-bold transition duration-150 ${
+                        selectedPayoutCount === num && isAvailable
+                          ? "bg-slate-800 text-white shadow-sm border border-slate-800"
+                          : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                      }`}
+                    >
+                      {num} {num === 1 ? "Recipient" : "Recipients"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               onClick={handleSpinBallot}
               disabled={isSpinning}
-              className={`mt-5 px-6 py-2.5 w-full rounded-xl font-medium tracking-tight text-white flex items-center justify-center gap-2 transition duration-200 active:scale-95 ${
+              className={`mt-4 px-6 py-2.5 w-full rounded-xl font-medium tracking-tight text-white flex items-center justify-center gap-2 transition duration-200 active:scale-95 ${
                 isSpinning 
                   ? "bg-slate-300 cursor-not-allowed" 
                   : "bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/10"
               }`}
             >
               <RefreshCw className={`h-4 w-4 ${isSpinning ? "animate-spin" : ""}`} />
-              {isSpinning ? "Spinning Drum..." : `Spin Ballot (Pick ${Math.min(payoutCount, eligibleMembers.length)})`}
+              {isSpinning ? "Spinning Drum..." : `Spin Ballot (Pick ${Math.min(selectedPayoutCount, eligibleMembers.length)})`}
             </button>
           </div>
 
@@ -204,15 +238,15 @@ export default function BallotWheel({
                   <Sparkles className="h-4 w-4" /> Selected Recipient(s)
                 </h3>
 
-                <div className="space-y-4 mb-4">
+                <div className="space-y-3 mb-4 animate-in fade-in-50 duration-200">
                   {selectedWinners.map((w, index) => (
-                    <div key={w.id} className="bg-white rounded-lg p-4 border border-emerald-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div key={w.id} className="bg-white rounded-lg p-3.5 border border-emerald-100 shadow-sm">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center">
                             {index + 1}
                           </span>
-                          <p className="font-bold text-slate-800">{w.name}</p>
+                          <p className="font-semibold text-slate-800">{w.name}</p>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs text-slate-500 font-mono">
                           <p>🏛️ Bank Name: <span className="text-slate-700 font-medium">{w.bankName}</span></p>
@@ -220,18 +254,22 @@ export default function BallotWheel({
                           <p className="sm:col-span-2">👤 Account Holder: <span className="text-slate-700 font-medium">{w.accountName}</span></p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          onSelected(selectedWinners);
-                          playSound(500, "sine", 0.1);
-                        }}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium self-end sm:self-auto"
-                      >
-                        Approve Draw
-                      </button>
                     </div>
                   ))}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelected(selectedWinners);
+                    playSound(500, "sine", 0.1);
+                    setSelectedWinners([]);
+                    setBallotReport("");
+                  }}
+                  className="w-full py-2.5 px-4 mb-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs tracking-wide shadow-md shadow-emerald-600/10 transition duration-150 uppercase-none flex items-center justify-center gap-2"
+                >
+                  Confirm & Approve Draw selection
+                </button>
 
                 {ballotReport && (
                   <div className="mt-4">

@@ -17,7 +17,7 @@ const INITIAL_MONTHS: ContributionMonth[] = [
     id: "2026-06",
     name: "June 2026",
     targetAmountPerMember: 100000,
-    recipientsCount: 1,
+    recipientsCount: 2,
     recipients: [], // Start without default mock winners
     status: "ACTIVE",
     payments: [] // Start without default mock payments
@@ -228,7 +228,7 @@ export default function App() {
         id: "2026-06",
         name: "June 2026",
         targetAmountPerMember: 100000,
-        recipientsCount: 1,
+        recipientsCount: 2,
         recipients: [],
         status: "ACTIVE" as const,
         payments: []
@@ -243,7 +243,7 @@ export default function App() {
         id: "2026-06",
         name: "June 2026",
         targetAmountPerMember: 100000,
-        recipientsCount: 1,
+        recipientsCount: 2,
         recipients: [],
         status: "ACTIVE" as const,
         payments: []
@@ -311,9 +311,11 @@ export default function App() {
     // Update active month recipients list
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (targetMonth) {
+      const existingRecipients = targetMonth.recipients || [];
+      const newRecipients = Array.from(new Set([...existingRecipients, ...winnerIds]));
       const updatedMonth: ContributionMonth = {
         ...targetMonth,
-        recipients: winnerIds
+        recipients: newRecipients
       };
       try {
         await setDoc(doc(db, "months", currentMonthId), updatedMonth);
@@ -327,7 +329,9 @@ export default function App() {
       if (winnerIds.includes(m.id)) {
         const updatedMem: Member = {
           ...m,
-          collectedMonths: [...m.collectedMonths, currentMonthId]
+          collectedMonths: m.collectedMonths.includes(currentMonthId)
+            ? m.collectedMonths
+            : [...m.collectedMonths, currentMonthId]
         };
         try {
           await setDoc(doc(db, "members", m.id), updatedMem);
