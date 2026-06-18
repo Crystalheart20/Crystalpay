@@ -5,7 +5,7 @@ import BallotWheel from "./components/BallotWheel";
 import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
-import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2 } from "lucide-react";
+import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus } from "lucide-react";
 import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -24,12 +24,29 @@ const INITIAL_MONTHS: ContributionMonth[] = [
   }
 ];
 
+export interface AjoGroup {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 export default function App() {
-  const [members, setMembers] = useState<Member[]>(() => {
+  const [groups, setGroups] = useState<AjoGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlGroupId = params.get("groupId");
+    if (urlGroupId) {
+      localStorage.setItem("selected_ajo_group_id", urlGroupId);
+      return urlGroupId;
+    }
+    return localStorage.getItem("selected_ajo_group_id") || "default";
+  });
+
+  const [allMembers, setAllMembers] = useState<(Member & { groupId?: string })[]>(() => {
     const saved = localStorage.getItem("ajo_members");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as Member[];
+        const parsed = JSON.parse(saved) as (Member & { groupId?: string })[];
         const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
         return parsed.filter(m => !mockIds.includes(m.id));
       } catch (e) {
@@ -39,11 +56,11 @@ export default function App() {
     return [];
   });
 
-  const [months, setMonths] = useState<ContributionMonth[]>(() => {
+  const [allMonths, setAllMonths] = useState<(ContributionMonth & { groupId?: string })[]>(() => {
     const saved = localStorage.getItem("ajo_months");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as ContributionMonth[];
+        const parsed = JSON.parse(saved) as (ContributionMonth & { groupId?: string })[];
         const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
         return parsed.map(m => {
           const cleanRecipients = m.recipients.filter(r => !mockIds.includes(r));
@@ -56,10 +73,10 @@ export default function App() {
           };
         });
       } catch (e) {
-        return INITIAL_MONTHS;
+        return [];
       }
     }
-    return INITIAL_MONTHS;
+    return [];
   });
 
   const [currentMonthId, setCurrentMonthId] = useState<string>("2026-06");
@@ -76,94 +93,115 @@ export default function App() {
   });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
 
-  // Synchronize with central Firestore cloud database and purge synthetic mock members
+  // Derived filtered members and months for the selected group
+  const members = allMembers.filter(m => (m.groupId || "default") === selectedGroupId);
+  const months = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
+
+  // Subscribe to Ajo groups in central Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "groups"), async (snapshot) => {
+      const list: AjoGroup[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as AjoGroup);
+      });
+      
+      if (list.length === 0) {
+        const defaultGroup: AjoGroup = {
+          id: "default",
+          name: "Primary Ajo Group",
+          createdAt: new Date().toISOString()
+        };
+        try {
+          await setDoc(doc(db, "groups", "default"), defaultGroup);
+        } catch (e) {
+          console.error("Seeding default group error: ", e);
+        }
+        setGroups([defaultGroup]);
+      } else {
+        setGroups(list);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to members in central Firestore
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "members"), (snapshot) => {
-      const list: Member[] = [];
+      const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data() as Member);
+        list.push(doc.data());
       });
       
       const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
-      const containsMock = list.some(m => mockIds.includes(m.id));
-      if (containsMock) {
-        // Deep purge from Firestore
-        list.forEach(async (m) => {
-          if (mockIds.includes(m.id)) {
-            try {
-              await deleteDoc(doc(db, "members", m.id));
-            } catch (e) {
-              console.error("Purge member error: ", e);
-            }
-          }
-        });
-        const cleaned = list.filter(m => !mockIds.includes(m.id));
-        setMembers(cleaned);
-      } else {
-        setMembers(list);
-      }
+      const filteredList = list.filter(m => !mockIds.includes(m.id)).map(m => {
+        if (!m.groupId) {
+          return { ...m, groupId: "default" };
+        }
+        return m;
+      });
+      setAllMembers(filteredList);
     });
     return () => unsubscribe();
   }, []);
 
+  // Subscribe to months in central Firestore
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "months"), (snapshot) => {
-      const list: ContributionMonth[] = [];
+      const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data() as ContributionMonth);
+        list.push(doc.data());
       });
       
       const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
-      let modified = false;
-      const sorted = list.sort((a, b) => a.id.localeCompare(b.id));
-      const cleanedList = sorted.map(mon => {
-        const hasMockRecipient = mon.recipients.some(rId => mockIds.includes(rId));
-        const hasMockPayment = mon.payments.some(p => mockIds.includes(p.memberId));
-        if (hasMockRecipient || hasMockPayment) {
-          modified = true;
-          return {
-            ...mon,
-            recipients: mon.recipients.filter(rId => !mockIds.includes(rId)),
-            payments: mon.payments.filter(p => !mockIds.includes(p.memberId))
-          };
-        }
-        return mon;
+      const cleanedList = list.map(mon => {
+        const cleanRecipients = (mon.recipients || []).filter((rId: string) => !mockIds.includes(rId));
+        const cleanPayments = (mon.payments || []).filter((p: any) => !mockIds.includes(p.memberId));
+        const gId = mon.groupId || "default";
+        
+        return {
+          ...mon,
+          groupId: gId,
+          targetAmountPerMember: mon.targetAmountPerMember === 10000 ? 100000 : mon.targetAmountPerMember,
+          recipients: cleanRecipients,
+          payments: cleanPayments.map((p: any) => p.amount === 10000 ? { ...p, amount: 100000 } : p)
+        };
       });
 
-      if (modified) {
-        cleanedList.forEach(async (mon) => {
-          try {
-            await setDoc(doc(db, "months", mon.id), mon);
-          } catch (e) {
-            console.error("Purge month references error: ", e);
-          }
-        });
-      }
-
-      if (cleanedList.length > 0) {
-        setMonths(cleanedList);
-      } else {
-        INITIAL_MONTHS.forEach(async (m) => {
-          try {
-            await setDoc(doc(db, "months", m.id), m);
-          } catch (e) {
-            console.error("Seed clean months error: ", e);
-          }
-        });
-      }
+      setAllMonths(cleanedList);
     });
     return () => unsubscribe();
   }, []);
 
+  // Auto-seed initial round if current group's months is empty
   useEffect(() => {
-    localStorage.setItem("ajo_members", JSON.stringify(members));
-  }, [members]);
+    if (selectedGroupId && allMonths.length > 0) {
+      const currentGroupMonths = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
+      if (currentGroupMonths.length === 0) {
+        const initialMonth: ContributionMonth & { groupId: string } = {
+          id: "2026-06",
+          name: "June 2026",
+          targetAmountPerMember: 100000,
+          recipientsCount: 2,
+          recipients: [],
+          status: "ACTIVE" as const,
+          payments: [],
+          groupId: selectedGroupId
+        };
+        const docId = `${selectedGroupId}_2026-06`;
+        setDoc(doc(db, "months", docId), initialMonth).catch(console.error);
+      }
+    }
+  }, [allMonths, selectedGroupId]);
 
   useEffect(() => {
-    localStorage.setItem("ajo_months", JSON.stringify(months));
-  }, [months]);
+    localStorage.setItem("ajo_members", JSON.stringify(allMembers));
+  }, [allMembers]);
 
-  const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
+  useEffect(() => {
+    localStorage.setItem("ajo_months", JSON.stringify(allMonths));
+  }, [allMonths]);
+
+  const currentMonth = months.find(m => m.id === currentMonthId) || months[0] || INITIAL_MONTHS[0];
   const currencySymbol = currentMonth?.id ? "NGN" : "NGN"; // Defaults
 
   // Eligible members for ballot box (members who haven't won a rotation yet)
@@ -174,11 +212,12 @@ export default function App() {
   });
 
   // Action: Add/Register a New Member
-  const handleAddMember = async (newMem: Omit<Member, "id" | "collectedMonths" | "isActive">) => {
+  const handleAddMember = async (newMem: Omit<Member, "id" | "collectedMonths" | "isActive text-indigo-600">) => {
     const freshId = "mem-" + Date.now();
-    const fresh: Member = {
+    const fresh: Member & { groupId: string } = {
       ...newMem,
       id: freshId,
+      groupId: selectedGroupId,
       collectedMonths: [],
       isActive: true
     };
@@ -186,7 +225,7 @@ export default function App() {
       await setDoc(doc(db, "members", freshId), fresh);
     } catch (e) {
       console.error(e);
-      setMembers(prev => [...prev, fresh]);
+      setAllMembers(prev => [...prev, fresh]);
     }
   };
 
@@ -197,59 +236,41 @@ export default function App() {
       const updatedMonths = months.map(m => ({
         ...m,
         recipients: m.recipients.filter(rId => rId !== id),
-        payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
+        payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id),
+        groupId: selectedGroupId
       }));
       for (const m of updatedMonths) {
-        await setDoc(doc(db, "months", m.id), m);
+        await setDoc(doc(db, "months", `${selectedGroupId}_${m.id}`), m);
       }
     } catch (e) {
       console.error(e);
-      setMembers(prev => prev.filter(m => m.id !== id));
-      setMonths(prev => prev.map(m => ({
-        ...m,
-        recipients: m.recipients.filter(rId => rId !== id),
-        payments: m.payments.filter(p => p.memberId !== id && p.recipientId !== id)
-      })));
     }
   };
 
   // Action: Reset entire application to pristine start
   const handleResetToPristine = async () => {
-    localStorage.removeItem("ajo_members");
-    localStorage.removeItem("ajo_months");
     try {
       for (const m of members) {
         await deleteDoc(doc(db, "members", m.id));
       }
       for (const mon of months) {
-        await deleteDoc(doc(db, "months", mon.id));
+        const docId = `${selectedGroupId}_${mon.id}`;
+        await deleteDoc(doc(db, "months", docId));
       }
-      const defaultMonth: ContributionMonth = {
+      const defaultMonth: ContributionMonth & { groupId: string } = {
         id: "2026-06",
         name: "June 2026",
         targetAmountPerMember: 100000,
         recipientsCount: 2,
         recipients: [],
         status: "ACTIVE" as const,
-        payments: []
+        payments: [],
+        groupId: selectedGroupId
       };
-      await setDoc(doc(db, "months", "2026-06"), defaultMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_2026-06`), defaultMonth);
     } catch (e) {
       console.error(e);
     }
-    setMembers([]);
-    setMonths([
-      {
-        id: "2026-06",
-        name: "June 2026",
-        targetAmountPerMember: 100000,
-        recipientsCount: 2,
-        recipients: [],
-        status: "ACTIVE" as const,
-        payments: []
-      }
-    ]);
-    setCurrentMonthId("2026-06");
   };
 
   // Action: Reset the ballot and payments for the current month
@@ -260,15 +281,16 @@ export default function App() {
     const recipientIds = targetMonth.recipients || [];
 
     // Reset month state: clear recipients, payments, and payouts confirmation
-    const updatedMonth: ContributionMonth = {
+    const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
       recipients: [],
       payments: [],
-      payoutConfirmedByRecipients: []
+      payoutConfirmedByRecipients: [],
+      groupId: selectedGroupId
     };
 
     try {
-      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
     } catch (e) {
       console.error(e);
     }
@@ -307,7 +329,10 @@ export default function App() {
     const currentM = updated.find(m => m.id === currentMonthId);
     if (currentM) {
       try {
-        await setDoc(doc(db, "months", currentMonthId), currentM);
+        await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), {
+          ...currentM,
+          groupId: selectedGroupId
+        });
       } catch (e) {
         console.error(e);
       }
@@ -332,13 +357,14 @@ export default function App() {
       recipientId: targetRecipient
     };
 
-    const updatedMonth: ContributionMonth = {
+    const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
-      payments: [...targetMonth.payments, newPayment]
+      payments: [...targetMonth.payments, newPayment],
+      groupId: selectedGroupId
     };
 
     try {
-      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
     } catch (e) {
       console.error(e);
     }
@@ -353,12 +379,13 @@ export default function App() {
     if (targetMonth) {
       const existingRecipients = targetMonth.recipients || [];
       const newRecipients = Array.from(new Set([...existingRecipients, ...winnerIds]));
-      const updatedMonth: ContributionMonth = {
+      const updatedMonth: ContributionMonth & { groupId: string } = {
         ...targetMonth,
-        recipients: newRecipients
+        recipients: newRecipients,
+        groupId: selectedGroupId
       };
       try {
-        await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+        await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
       } catch (e) {
         console.error(e);
       }
@@ -438,7 +465,10 @@ export default function App() {
     }
 
     try {
-      await setDoc(doc(db, "months", currentMonthId), updatedMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), {
+        ...updatedMonth,
+        groupId: selectedGroupId
+      });
     } catch (e) {
       console.error(e);
     }
@@ -452,13 +482,14 @@ export default function App() {
     const confirmed = targetMonth.payoutConfirmedByRecipients || [];
     if (confirmed.includes(memberId)) return;
 
-    const updatedMonth: ContributionMonth = {
+    const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
-      payoutConfirmedByRecipients: [...confirmed, memberId]
+      payoutConfirmedByRecipients: [...confirmed, memberId],
+      groupId: selectedGroupId
     };
 
     try {
-      await setDoc(doc(db, "months", monthId), updatedMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_${monthId}`), updatedMonth);
     } catch (e) {
       console.error(e);
     }
@@ -469,13 +500,14 @@ export default function App() {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
 
-    const updatedCurrentMonth: ContributionMonth = {
+    const updatedCurrentMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
-      status: "COMPLETED" as const
+      status: "COMPLETED" as const,
+      groupId: selectedGroupId
     };
 
     try {
-      await setDoc(doc(db, "months", currentMonthId), updatedCurrentMonth);
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedCurrentMonth);
     } catch (e) {
       console.error(e);
     }
@@ -487,17 +519,18 @@ export default function App() {
     // Check if next month exists, or append
     const exists = months.some(m => m.id === nextMonthId);
     if (!exists) {
-      const nextMonthObj: ContributionMonth = {
+      const nextMonthObj: ContributionMonth & { groupId: string } = {
         id: nextMonthId,
         name: nextMonthName,
         targetAmountPerMember: targetMonth.targetAmountPerMember,
         recipientsCount: targetMonth.recipientsCount,
         recipients: [],
         status: "ACTIVE" as const,
-        payments: []
+        payments: [],
+        groupId: selectedGroupId
       };
       try {
-        await setDoc(doc(db, "months", nextMonthId), nextMonthObj);
+        await setDoc(doc(db, "months", `${selectedGroupId}_${nextMonthId}`), nextMonthObj);
       } catch (e) {
         console.error(e);
       }
@@ -509,7 +542,7 @@ export default function App() {
 
   const [copiedLink, setCopiedLink] = useState(false);
   const handleCopyLink = () => {
-    const link = window.location.origin + window.location.pathname + "?role=member";
+    const link = window.location.origin + window.location.pathname + `?role=member&groupId=${selectedGroupId}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
@@ -550,6 +583,72 @@ export default function App() {
 
       {/* Main Core Viewport area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+
+        {/* Group Selector & Creation Panel */}
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="space-y-1">
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+              Active Ajo Group
+            </h2>
+            <p className="text-xs text-slate-500">
+              Select or create distinct Ajo groups with custom participants and savings goals.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2/5 w-full sm:w-auto">
+            <select
+              value={selectedGroupId}
+              onChange={(e) => {
+                const gId = e.target.value;
+                setSelectedGroupId(gId);
+                localStorage.setItem("selected_ajo_group_id", gId);
+                const params = new URLSearchParams(window.location.search);
+                params.set("groupId", gId);
+                window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+              }}
+              className="w-full sm:w-48 bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none"
+            >
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+
+            {!isMemberOnlyUrl && (
+              <button
+                onClick={async () => {
+                  const groupName = prompt("Enter a name for the new Ajo Group:");
+                  if (groupName && groupName.trim()) {
+                    const cleanName = groupName.trim();
+                    const newGroupId = "group-" + Date.now();
+                    const newGrp: AjoGroup = {
+                      id: newGroupId,
+                      name: cleanName,
+                      createdAt: new Date().toISOString()
+                    };
+                    try {
+                      await setDoc(doc(db, "groups", newGroupId), newGrp);
+                      setSelectedGroupId(newGroupId);
+                      localStorage.setItem("selected_ajo_group_id", newGroupId);
+                      
+                      const params = new URLSearchParams(window.location.search);
+                      params.set("groupId", newGroupId);
+                      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+                    } catch (err) {
+                      console.error("Create group error: ", err);
+                    }
+                  }
+                }}
+                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700/80 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm border border-indigo-100 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Create Group</span>
+              </button>
+            )}
+          </div>
+        </div>
         
         {/* Share Utility / Mode Banner */}
         {!isMemberOnlyUrl ? (

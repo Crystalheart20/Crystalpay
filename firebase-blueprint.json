@@ -1,5 +1,16 @@
 {
   "entities": {
+    "groups": {
+      "title": "AjoGroup",
+      "description": "An independent Ajo rotation group.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
     "members": {
       "title": "Member",
       "description": "A member registered in the Ajo contribution system.",
@@ -12,7 +23,8 @@
         "accountNo": { "type": "string" },
         "accountName": { "type": "string" },
         "collectedMonths": { "type": "array" },
-        "isActive": { "type": "boolean" }
+        "isActive": { "type": "boolean" },
+        "groupId": { "type": "string" }
       },
       "required": ["id", "name", "bankName", "accountNo"]
     },
@@ -28,12 +40,17 @@
         "recipients": { "type": "array" },
         "status": { "type": "string" },
         "payments": { "type": "array" },
-        "payoutConfirmedByRecipients": { "type": "array" }
+        "payoutConfirmedByRecipients": { "type": "array" },
+        "groupId": { "type": "string" }
       },
       "required": ["id", "name", "targetAmountPerMember", "recipientsCount", "recipients", "status", "payments"]
     }
   },
   "firestore": {
+    "/groups/{groupId}": {
+      "schema": "groups",
+      "description": "Collection of all independent Ajo groups"
+    },
     "/members/{memberId}": {
       "schema": "members",
       "description": "Collection of all system Ajo members"
