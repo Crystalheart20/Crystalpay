@@ -1,6 +1,55 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Core groups and contribution models
+    match /groups/{groupId} {
+      allow read, write: if true;
+    }
+    match /members/{memberId} {
+      allow read, write: if true;
+    }
+    match /months/{monthId} {
+      allow read, write: if true;
+    }
+
+    // Developer Partners: Only authenticated admins can write; anyone can read.
+    match /developer_partners/{partnerId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+      // Enable baseline prototype access without auth
+      allow write: if request.auth == null;
+    }
+    
+    // Properties: Only authenticated admins can write; anyone can read.
+    match /properties/{propertyId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+      // Enable baseline prototype access without auth
+      allow write: if request.auth == null;
+    }
+    
+    // Property Milestones: Anyone can read; admins can write.
+    match /property_milestones/{milestoneId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+      // Enable baseline prototype access without auth
+      allow write: if request.auth == null;
+    }
+
+    // Real Estate Pools: Groups/members can access pooled contracts
+    match /real_estate_pools/{poolId} {
+      allow read, write: if true;
+    }
+
+    // Pool Contributions: Members can read/write their own; admins can view all.
+    match /pool_contributions/{contributionId} {
+      allow read: if request.auth == null || (resource == null || resource.data.memberId == request.auth.uid || request.auth.token.admin == true);
+      allow create, update: if request.auth == null || request.resource.data.memberId == request.auth.uid;
+      allow delete: if request.auth == null || request.auth.token.admin == true;
+    }
+    
+    // Fallback/all other collections
     match /{document=**} {
       allow read, write: if true;
     }

@@ -44,3 +44,97 @@ export interface ChatMessage {
   image?: string; // base64 attachment
   timestamp: string;
 }
+
+// ==========================================
+// REAL ESTATE POOL ENTITIES
+// ==========================================
+
+export interface DeveloperPartner {
+  id: string;
+  name: string;
+  contactInfo: string;
+  relationship: "family" | "referral" | "external";
+  isVerified: boolean;
+}
+
+export interface PropertyListing {
+  id: string;
+  developerPartnerId: string;
+  title: string;
+  location: string;
+  type: "land" | "off-plan" | "completed";
+  totalPrice: number;
+  currency: string; // e.g. "NGN" or "USD"
+  titleStatus: string; // e.g. "C of O", "Governor's Consent", "Deed of Assignment"
+  lawyerVerified: boolean;
+  surveyorReport: string;
+  documentLinks: string[];
+  status: "available" | "funding" | "completed";
+}
+
+export interface PropertyMilestone {
+  id: string;
+  propertyId: string;
+  title: string;
+  releasePercentage: number; // e.g. 20 (meaning 20%)
+  isVerified: boolean;
+  evidenceUrl: string; // text description or mock photo/video link
+  status: "pending" | "approved" | "released";
+}
+
+export interface RealEstatePool {
+  id: string;
+  groupId: string;
+  propertyId: string;
+  targetAmount: number;
+  currency: string;
+  deadline: string;
+  escrowProvider: string;
+  escrowAccountNo: string;
+  status: "active" | "funded" | "milestone-released" | "completed";
+}
+
+export interface PoolContribution {
+  id: string;
+  poolId: string;
+  memberId: string;
+  amount: number;
+  currency: string;
+  verified: boolean;
+  date: string;
+}
+
+export interface PoolFundRelease {
+  id: string;
+  poolId: string;
+  milestoneId: string;
+  amount: number;
+  status: "proposed" | "approved" | "released";
+}
+
+export interface PoolReleaseApproval {
+  id: string;
+  releaseId: string;
+  memberId: string;
+  approved: boolean;
+  date: string;
+}
+
+export interface PoolDispute {
+  id: string;
+  poolId: string;
+  memberId: string;
+  title: string;
+  description: string;
+  status: "open" | "resolved";
+  date: string;
+}
+
+export interface OwnershipCertificate {
+  id: string;
+  poolId: string;
+  memberId: string;
+  documentLink: string; // reference/url to legal joint-deed documents
+  notes: string;
+}
+

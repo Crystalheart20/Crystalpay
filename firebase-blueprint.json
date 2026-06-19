@@ -44,6 +44,86 @@
         "groupId": { "type": "string" }
       },
       "required": ["id", "name", "targetAmountPerMember", "recipientsCount", "recipients", "status", "payments"]
+    },
+    "developer_partners": {
+      "title": "DeveloperPartner",
+      "description": "Real estate developers supplying properties",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contactInfo": { "type": "string" },
+        "relationship": { "type": "string" },
+        "isVerified": { "type": "boolean" }
+      },
+      "required": ["id", "name", "contactInfo", "relationship", "isVerified"]
+    },
+    "properties": {
+      "title": "PropertyListing",
+      "description": "Properties available for joint pooling",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "developerPartnerId": { "type": "string" },
+        "title": { "type": "string" },
+        "location": { "type": "string" },
+        "type": { "type": "string" },
+        "totalPrice": { "type": "number" },
+        "currency": { "type": "string" },
+        "titleStatus": { "type": "string" },
+        "lawyerVerified": { "type": "boolean" },
+        "surveyorReport": { "type": "string" },
+        "documentLinks": { "type": "array" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "developerPartnerId", "title", "location", "type", "totalPrice", "currency", "status"]
+    },
+    "property_milestones": {
+      "title": "PropertyMilestone",
+      "description": "Gated construction/title milestones tied to a property",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "propertyId": { "type": "string" },
+        "title": { "type": "string" },
+        "releasePercentage": { "type": "number" },
+        "isVerified": { "type": "boolean" },
+        "evidenceUrl": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "propertyId", "title", "releasePercentage", "isVerified", "status"]
+    },
+    "real_estate_pools": {
+      "title": "RealEstatePool",
+      "description": "Pooled co-purchasing group fund for a property",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "propertyId": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currency": { "type": "string" },
+        "deadline": { "type": "string" },
+        "escrowProvider": { "type": "string" },
+        "escrowAccountNo": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "groupId", "propertyId", "targetAmount", "currency", "deadline", "escrowProvider", "escrowAccountNo", "status"]
+    },
+    "pool_contributions": {
+      "title": "PoolContribution",
+      "description": "Member payments towards a property pool",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "poolId": { "type": "string" },
+        "memberId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "poolId", "memberId", "amount", "currency", "verified", "date"]
     }
   },
   "firestore": {
@@ -58,6 +138,26 @@
     "/months/{monthId}": {
       "schema": "months",
       "description": "Collection of contribution months"
+    },
+    "/developer_partners/{partnerId}": {
+      "schema": "developer_partners",
+      "description": "Property developer partners list"
+    },
+    "/properties/{propertyId}": {
+      "schema": "properties",
+      "description": "Property listings"
+    },
+    "/property_milestones/{milestoneId}": {
+      "schema": "property_milestones",
+      "description": "Independent milestones for property payments"
+    },
+    "/real_estate_pools/{poolId}": {
+      "schema": "real_estate_pools",
+      "description": "Collective real estate pooling contracts"
+    },
+    "/pool_contributions/{contributionId}": {
+      "schema": "pool_contributions",
+      "description": "Individual co-ownership contribution logs"
     }
   }
 }

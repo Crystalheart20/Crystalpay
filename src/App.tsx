@@ -5,7 +5,8 @@ import BallotWheel from "./components/BallotWheel";
 import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
-import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus } from "lucide-react";
+import RealEstatePools from "./components/RealEstatePools";
+import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
 import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -80,7 +81,7 @@ export default function App() {
   });
 
   const [currentMonthId, setCurrentMonthId] = useState<string>("2026-06");
-  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal">(() => {
+  const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal" | "realestate">(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("role") === "member" || params.get("portal") === "true") {
       return "portal";
@@ -686,7 +687,7 @@ export default function App() {
         ) : null}
 
         {/* Navigation Tabs Bar */}
-        <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-4xl gap-1">
+        <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-5xl gap-1">
           <button
             onClick={() => setActiveTab("portal")}
             className={`flex items-center gap-1.5 flex-1 min-w-[120px] justify-center py-2.5 px-3 rounded-lg text-xs font-extrabold transition duration-200 ${
@@ -695,6 +696,16 @@ export default function App() {
           >
             <User className="h-4 w-4" />
             <span>👥 Member Portal</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("realestate")}
+            className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-extrabold transition duration-200 ${
+              activeTab === "realestate" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/30"
+            }`}
+          >
+            <Building2 className="h-4 w-4" />
+            <span>🏙️ Real Estate Pools</span>
           </button>
 
           {!isMemberOnlyUrl && (
@@ -753,6 +764,14 @@ export default function App() {
               onAddMember={handleAddMember}
               onPaymentApproved={(mId, amt, ref, sName, rId) => handleRecordPayment(mId, amt, ref, sName, rId)}
               onConfirmPayoutReceipt={handleConfirmPayoutReceipt}
+            />
+          )}
+
+          {activeTab === "realestate" && (
+            <RealEstatePools
+              members={members}
+              selectedGroupId={selectedGroupId}
+              isMemberOnlyUrl={isMemberOnlyUrl}
             />
           )}
 
