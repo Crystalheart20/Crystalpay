@@ -47,9 +47,7 @@ export default function App() {
     const saved = localStorage.getItem("ajo_members");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as (Member & { groupId?: string })[];
-        const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
-        return parsed.filter(m => !mockIds.includes(m.id));
+        return JSON.parse(saved) as (Member & { groupId?: string })[];
       } catch (e) {
         return [];
       }
@@ -62,15 +60,11 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as (ContributionMonth & { groupId?: string })[];
-        const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
         return parsed.map(m => {
-          const cleanRecipients = m.recipients.filter(r => !mockIds.includes(r));
-          const cleanPayments = m.payments.filter(p => !mockIds.includes(p.memberId));
           return {
             ...m,
             targetAmountPerMember: m.targetAmountPerMember === 10000 ? 100000 : m.targetAmountPerMember,
-            recipients: cleanRecipients,
-            payments: cleanPayments.map(p => p.amount === 10000 ? { ...p, amount: 100000 } : p)
+            payments: m.payments.map(p => p.amount === 10000 ? { ...p, amount: 100000 } : p)
           };
         });
       } catch (e) {
@@ -133,14 +127,13 @@ export default function App() {
         list.push(doc.data());
       });
       
-      const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
-      const filteredList = list.filter(m => !mockIds.includes(m.id)).map(m => {
+      const mappedList = list.map(m => {
         if (!m.groupId) {
           return { ...m, groupId: "default" };
         }
         return m;
       });
-      setAllMembers(filteredList);
+      setAllMembers(mappedList);
     });
     return () => unsubscribe();
   }, []);
@@ -153,18 +146,15 @@ export default function App() {
         list.push(doc.data());
       });
       
-      const mockIds = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
       const cleanedList = list.map(mon => {
-        const cleanRecipients = (mon.recipients || []).filter((rId: string) => !mockIds.includes(rId));
-        const cleanPayments = (mon.payments || []).filter((p: any) => !mockIds.includes(p.memberId));
         const gId = mon.groupId || "default";
         
         return {
           ...mon,
           groupId: gId,
           targetAmountPerMember: mon.targetAmountPerMember === 10000 ? 100000 : mon.targetAmountPerMember,
-          recipients: cleanRecipients,
-          payments: cleanPayments.map((p: any) => p.amount === 10000 ? { ...p, amount: 100000 } : p)
+          recipients: mon.recipients || [],
+          payments: (mon.payments || []).map((p: any) => p.amount === 10000 ? { ...p, amount: 100000 } : p)
         };
       });
 
@@ -175,7 +165,7 @@ export default function App() {
 
   // Auto-seed initial round if current group's months is empty
   useEffect(() => {
-    if (selectedGroupId && allMonths.length > 0) {
+    if (selectedGroupId) {
       const currentGroupMonths = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
       if (currentGroupMonths.length === 0) {
         const initialMonth: ContributionMonth & { groupId: string } = {
