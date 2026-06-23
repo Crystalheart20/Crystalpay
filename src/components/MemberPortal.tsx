@@ -18,7 +18,8 @@ import {
   Phone,
   FileText,
   BadgePercent,
-  CheckSquare
+  CheckSquare,
+  Inbox
 } from "lucide-react";
 
 interface MemberPortalProps {
@@ -29,6 +30,8 @@ interface MemberPortalProps {
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
   onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => void;
   onConfirmPayoutReceipt: (memberId: string, monthId: string) => void;
+  onConfirmPaymentCredit?: (memberId: string, recipientId: string, transactionRef: string) => Promise<void>;
+  onLoginChange?: (groupId: string) => void;
 }
 
 export default function MemberPortal({
@@ -38,7 +41,9 @@ export default function MemberPortal({
   currency,
   onAddMember,
   onPaymentApproved,
-  onConfirmPayoutReceipt
+  onConfirmPayoutReceipt,
+  onConfirmPaymentCredit,
+  onLoginChange
 }: MemberPortalProps) {
   // Authentication & Session state
   const [loggedInMemberId, setLoggedInMemberId] = useState<string>(() => {
@@ -162,6 +167,11 @@ export default function MemberPortal({
     setLoggedInMemberId(memberId);
     localStorage.setItem("ajo_member_session", memberId);
     resetUploadState();
+
+    const loggedMember = members.find(m => m.id === memberId);
+    if (loggedMember && loggedMember.groupId && onLoginChange) {
+      onLoginChange(loggedMember.groupId);
+    }
   };
 
   const handleLogout = () => {
@@ -627,22 +637,44 @@ export default function MemberPortal({
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => copyToClipboard(rec.accountNo, rec.id)}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition self-end sm:self-center"
-                        >
-                          {copiedAccNo === rec.id ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy Bank No</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-2 self-end sm:self-center">
+                          <button
+                            onClick={() => copyToClipboard(rec.accountNo, `no-${rec.id}`)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-750 font-bold text-xs flex items-center gap-1.5 transition"
+                          >
+                            {copiedAccNo === `no-${rec.id}` ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>No. Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy No</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              const fullDetails = `Bank: ${rec.bankName}\nAccount Name: ${rec.accountName}\nAccount Number: ${rec.accountNo}`;
+                              copyToClipboard(fullDetails, `full-${rec.id}`);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition"
+                          >
+                            {copiedAccNo === `full-${rec.id}` ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Details Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy Full Details</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -684,6 +716,98 @@ export default function MemberPortal({
                       </>
                     )}
                   </p>
+
+                  {/* INCOMING CREDITS SECTION */}
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5 uppercase tracking-wide border-b border-slate-100 pb-2">
+                      <Inbox className="w-3.5 h-3.5 text-indigo-500 animate-bounce" />
+                      <span>📥 Incoming Credits From Group Members</span>
+                    </h5>
+
+                    {(() => {
+                      const incomingPayments = currentMonth?.payments.filter(p => p.recipientId === loggedInMemberId) || [];
+                      
+                      // Deterministic payment assignment matches MemberPortal expected payment calculation:
+                      const expectedPayers = members.filter(m => {
+                        if (!currentMonth) return false;
+                        if (currentMonth.recipients.includes(m.id)) return false; // Recipients do not contribute
+                        
+                        if (currentMonth.recipients.length === 1) {
+                          return true; // everyone pays the single recipient
+                        } else if (currentMonth.recipients.length === 2) {
+                          const contributors = members
+                            .filter(mb => !currentMonth.recipients.includes(mb.id))
+                            .sort((a, b) => a.id.localeCompare(b.id));
+                          const index = contributors.findIndex(c => c.id === m.id);
+                          const halfLimit = Math.ceil(contributors.length / 2);
+                          if (loggedInMemberId === currentMonth.recipients[0]) {
+                            return index >= 0 && index < halfLimit;
+                          } else {
+                            return index >= halfLimit;
+                          }
+                        }
+                        return true;
+                      });
+
+                      if (expectedPayers.length === 0) {
+                        return (
+                          <p className="text-[11px] text-slate-400 font-medium">
+                            No other members are assigned to contribute to you this round.
+                          </p>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                          {expectedPayers.map((payer) => {
+                            const payment = incomingPayments.find(p => p.memberId === payer.id);
+                            return (
+                              <div key={payer.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-slate-800">{payer.name}</span>
+                                    <span className="text-[10px] text-slate-400">({payer.phone})</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 font-semibold uppercase">Expected: {currency}{targetAmount.toLocaleString()}</p>
+                                  {payment ? (
+                                    <div className="font-mono text-[10px] text-slate-500 space-y-0.5 mt-1 bg-white p-2 rounded border border-slate-150 shadow-xs">
+                                      <p className="text-emerald-700 font-bold">✓ Dues Transferred: {currency}{payment.amount.toLocaleString()}</p>
+                                      <p>Ref: <span className="text-indigo-600 font-medium">{payment.transactionRef}</span></p>
+                                      {payment.senderAccountName && <p>Sender Name: <span className="text-slate-700 font-medium">{payment.senderAccountName}</span></p>}
+                                      <p>Date: {payment.date}</p>
+                                    </div>
+                                  ) : (
+                                    <p className="text-amber-600 text-[10px] font-medium mt-1 animate-pulse">⏳ Awaiting member payment upload...</p>
+                                  )}
+                                </div>
+
+                                {payment && (
+                                  <div className="self-end sm:self-center">
+                                    {payment.confirmedByRecipient ? (
+                                      <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10px] flex items-center gap-1 border border-emerald-100">
+                                        <CheckCircle className="w-3 h-3" /> Confirmed
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={async () => {
+                                          if (onConfirmPaymentCredit) {
+                                            await onConfirmPaymentCredit(payment.memberId, loggedInMemberId, payment.transactionRef);
+                                          }
+                                        }}
+                                        className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10.5px] transition shadow-sm cursor-pointer whitespace-nowrap"
+                                      >
+                                        Confirm Credit
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
 
                   <div className="bg-white p-3.5 rounded-xl border border-amber-500/10 text-xs">
                     <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Receipt Confirmation Status</span>

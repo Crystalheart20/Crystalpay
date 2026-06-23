@@ -12,6 +12,7 @@ export interface Member {
   accountName: string;
   collectedMonths: string[]; // List of historical round IDs they have won/collected
   isActive: boolean;
+  groupId?: string;
 }
 
 export interface PaymentLog {
@@ -22,6 +23,7 @@ export interface PaymentLog {
   senderAccountName?: string;
   verifiedByAI: boolean;
   recipientId?: string; // The specific winner member receiving this payment
+  confirmedByRecipient?: boolean;
 }
 
 export interface ContributionMonth {

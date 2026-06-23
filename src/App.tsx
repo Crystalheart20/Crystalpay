@@ -143,7 +143,11 @@ export default function App() {
     const unsubscribe = onSnapshot(collection(db, "months"), (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data());
+        const data = doc.data();
+        list.push({
+          id: data.id || doc.id.split("_").pop() || doc.id,
+          ...data
+        });
       });
       
       const cleanedList = list.map(mon => {
@@ -183,6 +187,19 @@ export default function App() {
       }
     }
   }, [allMonths, selectedGroupId]);
+
+  // Synchronize selectedGroupId with logged-in member's groupId if accessing via member portal
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlMemberId = params.get("memberId") || localStorage.getItem("ajo_member_session");
+    if (urlMemberId && allMembers.length > 0) {
+      const loggedMember = allMembers.find(m => m.id === urlMemberId);
+      if (loggedMember && loggedMember.groupId && loggedMember.groupId !== selectedGroupId) {
+        setSelectedGroupId(loggedMember.groupId);
+        localStorage.setItem("selected_ajo_group_id", loggedMember.groupId);
+      }
+    }
+  }, [allMembers, selectedGroupId]);
 
   useEffect(() => {
     localStorage.setItem("ajo_members", JSON.stringify(allMembers));
@@ -486,6 +503,31 @@ export default function App() {
     }
   };
 
+  // Action: Confirm individual payment receipt by winning recipient
+  const handleConfirmPaymentCredit = async (memberId: string, recipientId: string, transactionRef: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+
+    const updatedPayments = targetMonth.payments.map(p => {
+      if (p.memberId === memberId && p.recipientId === recipientId && p.transactionRef === transactionRef) {
+        return { ...p, confirmedByRecipient: true };
+      }
+      return p;
+    });
+
+    const updatedMonth: ContributionMonth & { groupId: string } = {
+      ...targetMonth,
+      payments: updatedPayments,
+      groupId: selectedGroupId
+    };
+
+    try {
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Action: Complete and close existing month pool
   const handleCloseRound = async () => {
     const targetMonth = months.find(m => m.id === currentMonthId);
@@ -754,6 +796,11 @@ export default function App() {
               onAddMember={handleAddMember}
               onPaymentApproved={(mId, amt, ref, sName, rId) => handleRecordPayment(mId, amt, ref, sName, rId)}
               onConfirmPayoutReceipt={handleConfirmPayoutReceipt}
+              onConfirmPaymentCredit={handleConfirmPaymentCredit}
+              onLoginChange={(groupId) => {
+                setSelectedGroupId(groupId);
+                localStorage.setItem("selected_ajo_group_id", groupId);
+              }}
             />
           )}
 

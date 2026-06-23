@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Member, ContributionMonth, PaymentLog } from "../types";
-import { Users, Coins, ClipboardList, Send, Calendar, CheckCircle, Clock, Plus, Trash2, Edit2, AlertCircle, Sparkles, Copy, Check, ChevronRight, RotateCcw } from "lucide-react";
+import { Users, Coins, ClipboardList, Send, Calendar, CheckCircle, Clock, Plus, Trash2, Edit2, AlertCircle, Sparkles, Copy, Check, ChevronRight, RotateCcw, Lock } from "lucide-react";
 
 interface DashboardProps {
   members: Member[];
@@ -161,6 +161,30 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6">
+
+      {/* SUCCESS BANNER TO CLOSE MONTH SESSION */}
+      {totalRecipients > 0 && pendingTransfersCount === 0 && currentMonth?.status !== "COMPLETED" && (
+        <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border-2 border-emerald-500/30 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-emerald-500/20 rounded-xl text-emerald-700 animate-pulse">
+              <CheckCircle className="h-6 w-6" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-800">🎉 Monthly Contributions Fully Cleared!</h4>
+              <p className="text-xs text-slate-500 mt-0.5">
+                All expected {totalTransfersExpected} contributing members have successfully transferred their dues. You can now close this month's session to transition to the next month's rotational pot.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onCloseRound}
+            className="w-full md:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow shadow-emerald-600/20 flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+          >
+            <Lock className="w-4 h-4" />
+            <span>Confirm & Close Session for {currentMonth?.name}</span>
+          </button>
+        </div>
+      )}
       
       {/* Top Level Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
