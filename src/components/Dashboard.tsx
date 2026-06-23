@@ -572,7 +572,7 @@ export default function Dashboard({
                 Apply Parameters
               </button>
 
-              {currentMonth && totalRecipients > 0 && onResetBallot && (
+              {currentMonth && onResetBallot && (
                 <div className="pt-2">
                   <button
                     type="button"
@@ -662,14 +662,33 @@ export default function Dashboard({
               {onResetToPristine && (
                 <div className="pt-4 border-t border-slate-100 mt-4 space-y-2">
                   <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Reset &amp; Start Fresh</h4>
-                  <p className="text-[10px] text-slate-400 leading-snug">Wipe out all seed group members &amp; seed transactions to configure your own real savings circle from scratch.</p>
+                  
+                  {/* Safe reset option */}
+                  {onResetBallot && (
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-150 space-y-1.5 mb-2.5">
+                      <p className="text-[10px] text-slate-500 font-bold leading-snug text-indigo-750">🔒 SAFE: Reset Current Round ONLY</p>
+                      <p className="text-[9px] text-slate-400 leading-normal">Clears this month's winners and payments so you can redraw, but keeps all your saved members completely safe!</p>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to clear this month's winners and payment logs? Your saved members will NOT be deleted.")) {
+                            onResetBallot();
+                          }
+                        }}
+                        className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[10px] rounded-md transition border border-indigo-150 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3 animate-spin-reverse" /> Reset Current Round (Keep Members)
+                      </button>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-slate-400 leading-snug">⚠️ DESTRUCTIVE: Wipe out all seed group members &amp; seed transactions to configure your own real savings circle from scratch.</p>
                   <button
                     onClick={() => {
                       if (window.confirm("Are you sure you want to delete all members, reset current month parameters, and start completely fresh? This will clear browser cached seed data!")) {
                         onResetToPristine();
                       }
                     }}
-                    className="w-full py-2 border border-rose-200 hover:bg-rose-50 text-rose-600 font-extrabold text-[11px] rounded-lg transition"
+                    className="w-full py-2 border border-rose-200 hover:bg-rose-50 text-rose-600 font-extrabold text-[11px] rounded-lg transition cursor-pointer"
                   >
                     Wipe Seed Data &amp; Start Fresh
                   </button>

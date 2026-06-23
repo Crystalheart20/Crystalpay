@@ -319,9 +319,9 @@ export default function App() {
       console.error(e);
     }
 
-    // Clear winner histories in members for this month
+    // Clear winner histories in ALL group members for this month
     for (const m of members) {
-      if (recipientIds.includes(m.id)) {
+      if (recipientIds.includes(m.id) || m.collectedMonths.includes(currentMonthId)) {
         const updatedMem: Member = {
           ...m,
           collectedMonths: m.collectedMonths.filter(id => id !== currentMonthId)

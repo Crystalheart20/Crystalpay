@@ -927,15 +927,20 @@ export default function MemberPortal({
                 {(() => {
                   const paymentsMade = currentMonth?.payments.filter(p => p.memberId === loggedInMemberId) || [];
                   const isFullyPaid = winnersOwed.length > 0 && winnersOwed.every(w => paymentsMade.some(p => p.recipientId === w.id));
-                  const isExempt = winnersOwed.length === 0;
+                  const isExempt = !!isSelectedRecipientThisMonth;
+                  const isAwaitingDraw = !currentMonth || !currentMonth.recipients || currentMonth.recipients.length === 0;
 
                   return (
                     <>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-50 p-4 rounded-xl">
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Payment Status</span>
-                          {isExempt ? (
-                            <span className="text-rose-700 text-xs font-black mt-1 inline-flex items-center gap-1">
+                          {isAwaitingDraw ? (
+                            <span className="text-slate-500 text-xs font-extrabold mt-1 inline-flex items-center gap-1">
+                              ⏳ AWAITING DRAW
+                            </span>
+                          ) : isExempt ? (
+                            <span className="text-emerald-700 text-xs font-black mt-1 inline-flex items-center gap-1">
                               🏆 EXEMPT (RECEIVING)
                             </span>
                           ) : isFullyPaid ? (
