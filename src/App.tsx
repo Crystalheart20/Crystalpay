@@ -201,6 +201,22 @@ export default function App() {
     }
   }, [allMembers, selectedGroupId]);
 
+  // Synchronize currentMonthId with the active month in the selected group
+  useEffect(() => {
+    if (selectedGroupId && allMonths.length > 0) {
+      const groupMonths = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
+      const activeMonth = groupMonths.find(m => m.status === "ACTIVE");
+      if (activeMonth && activeMonth.id !== currentMonthId) {
+        setCurrentMonthId(activeMonth.id);
+      } else if (!activeMonth && groupMonths.length > 0) {
+        const sorted = [...groupMonths].sort((a, b) => b.id.localeCompare(a.id));
+        if (sorted[0] && sorted[0].id !== currentMonthId) {
+          setCurrentMonthId(sorted[0].id);
+        }
+      }
+    }
+  }, [allMonths, selectedGroupId, currentMonthId]);
+
   useEffect(() => {
     localStorage.setItem("ajo_members", JSON.stringify(allMembers));
   }, [allMembers]);
@@ -385,11 +401,11 @@ export default function App() {
     // Update active month recipients list
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (targetMonth) {
-      const existingRecipients = targetMonth.recipients || [];
-      const newRecipients = Array.from(new Set([...existingRecipients, ...winnerIds]));
+      const oldRecipients = targetMonth.recipients || [];
+      
       const updatedMonth: ContributionMonth & { groupId: string } = {
         ...targetMonth,
-        recipients: newRecipients,
+        recipients: winnerIds, // REPLACES existing recipients instead of appending
         groupId: selectedGroupId
       };
       try {
@@ -397,21 +413,40 @@ export default function App() {
       } catch (e) {
         console.error(e);
       }
-    }
 
-    // Mark winner histories in members
-    for (const m of members) {
-      if (winnerIds.includes(m.id)) {
-        const updatedMem: Member = {
-          ...m,
-          collectedMonths: m.collectedMonths.includes(currentMonthId)
-            ? m.collectedMonths
-            : [...m.collectedMonths, currentMonthId]
-        };
-        try {
-          await setDoc(doc(db, "members", m.id), updatedMem);
-        } catch (e) {
-          console.error(e);
+      // Update members:
+      // 1. Remove this month from old recipients who are no longer in the new winners list
+      const removedRecipients = oldRecipients.filter(id => !winnerIds.includes(id));
+      for (const mId of removedRecipients) {
+        const memObj = members.find(m => m.id === mId);
+        if (memObj) {
+          const updatedMem: Member = {
+            ...memObj,
+            collectedMonths: memObj.collectedMonths.filter(id => id !== currentMonthId)
+          };
+          try {
+            await setDoc(doc(db, "members", mId), updatedMem);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+
+      // 2. Add this month to new recipients
+      for (const mId of winnerIds) {
+        const memObj = members.find(m => m.id === mId);
+        if (memObj) {
+          const updatedMem: Member = {
+            ...memObj,
+            collectedMonths: memObj.collectedMonths.includes(currentMonthId)
+              ? memObj.collectedMonths
+              : [...memObj.collectedMonths, currentMonthId]
+          };
+          try {
+            await setDoc(doc(db, "members", mId), updatedMem);
+          } catch (e) {
+            console.error(e);
+          }
         }
       }
     }
@@ -832,8 +867,10 @@ export default function App() {
             <BallotWheel
               eligibleMembers={eligibleMembers}
               onSelected={handleApproveBallotSelection}
+              onResetBallot={handleResetBallot}
               payoutCount={currentMonth?.recipientsCount || 1}
               monthName={currentMonth?.name || "N/A"}
+              currentMonthRecipients={currentMonth?.recipients}
             />
           )}
 

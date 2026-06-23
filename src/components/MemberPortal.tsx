@@ -431,6 +431,33 @@ export default function MemberPortal({
                 <span>Each scheduled member is contributing <strong className="text-slate-900 font-bold">{currency} {targetAmount.toLocaleString()}</strong> towards the selected winners this round.</span>
               </div>
             </div>
+
+            {activeRecipientsList.length > 0 ? (
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wide">
+                  <Trophy className="w-4 h-4 text-amber-500 animate-bounce" />
+                  <span>🎉 Approved Rotational Winners ({currentMonth?.name})</span>
+                </div>
+                <div className="space-y-2">
+                  {activeRecipientsList.map((winner, idx) => (
+                    <div key={winner.id} className="bg-white/85 p-3 rounded-xl border border-emerald-100 flex justify-between items-center gap-2">
+                      <div>
+                        <p className="font-extrabold text-xs text-slate-800">{idx + 1}. {winner.name}</p>
+                        <p className="text-[10px] text-slate-500 font-mono">{winner.bankName} • {winner.accountNo.slice(0, 4)}****</p>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider">
+                        Selected Recipient
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
+                <p className="font-semibold">⏳ No Ballot Draw Conducted Yet</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">The group administrator has not conducted the random ballot draw for this round yet. Log in to check your status or register your profile!</p>
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
@@ -598,6 +625,56 @@ export default function MemberPortal({
               <span>Sign Out Portal</span>
             </button>
           </div>
+
+          {/* Banner: List of All Active Rotational Winners */}
+          {activeRecipientsList.length > 0 ? (
+            <div className="bg-gradient-to-r from-emerald-500/10 via-indigo-500/5 to-teal-500/10 border-2 border-emerald-500/20 rounded-2xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-amber-500 animate-bounce" />
+                <div>
+                  <h4 className="text-sm font-black text-slate-800">🎉 Approved Rotational Winners for {currentMonth?.name}</h4>
+                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
+                    Rotational Pot Size: <strong className="text-slate-800 font-extrabold">{currency} {poolSize.toLocaleString()}</strong>
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {activeRecipientsList.map((winner, idx) => {
+                  const hasWonAlready = winner.id === loggedInMemberId;
+                  return (
+                    <div key={winner.id} className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition duration-200 ${
+                      hasWonAlready 
+                        ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/15"
+                        : "bg-white border-slate-200/70 text-slate-800 hover:border-slate-300"
+                    }`}>
+                      <div>
+                        <p className={`font-extrabold ${hasWonAlready ? "text-white" : "text-slate-800"}`}>
+                          {idx + 1}. {winner.name} {hasWonAlready && " (You!)"}
+                        </p>
+                        <p className={`text-[10px] ${hasWonAlready ? "text-indigo-200" : "text-slate-500"} font-mono mt-0.5`}>
+                          {winner.bankName} • {winner.accountNo}
+                        </p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                        hasWonAlready 
+                          ? "bg-white text-indigo-700" 
+                          : "bg-emerald-50 text-emerald-700 border border-emerald-100/60"
+                      }`}>
+                        Winner
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 text-center max-w-2xl mx-auto space-y-1">
+              <p className="text-sm font-bold text-slate-700">⏳ Ballot Draw Awaiting Execution</p>
+              <p className="text-xs text-slate-400">
+                The group administrator has not conducted the random ballot draw for {currentMonth?.name} yet. Check back soon for approved recipients!
+              </p>
+            </div>
+          )}
 
           {/* Persona Workflows */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

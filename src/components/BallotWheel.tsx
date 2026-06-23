@@ -6,15 +6,19 @@ import { Award, RefreshCw, Volume2, VolumeX, Sparkles, AlertCircle, Copy, Check 
 interface BallotWheelProps {
   eligibleMembers: Member[];
   onSelected: (selected: Member[]) => void;
+  onResetBallot?: () => void;
   payoutCount: 1 | 2;
   monthName: string;
+  currentMonthRecipients?: string[];
 }
 
 export default function BallotWheel({
   eligibleMembers,
   onSelected,
+  onResetBallot,
   payoutCount,
-  monthName
+  monthName,
+  currentMonthRecipients
 }: BallotWheelProps) {
   const [isSpinning, setIsSpinning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -134,6 +138,32 @@ export default function BallotWheel({
           {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
         </button>
       </div>
+
+      {currentMonthRecipients && currentMonthRecipients.length > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-slate-800">⚠️ Active Ballot Winners Detected for this Round</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                The current month already has approved recipients. If a winner does not want to collect this month, click "Reset current ballot" to clear active selections and enable a fresh redraw!
+              </p>
+            </div>
+          </div>
+          {onResetBallot && (
+            <button
+              onClick={() => {
+                if (window.confirm("Are you sure you want to clear the active ballot winners and redraw? All payments for this round will also be reset.")) {
+                  onResetBallot();
+                }
+              }}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-750 text-white font-bold text-xs rounded-lg transition shadow-sm whitespace-nowrap self-end sm:self-center cursor-pointer"
+            >
+              Reset Current Ballot
+            </button>
+          )}
+        </div>
+      )}
 
       {eligibleMembers.length === 0 ? (
         <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
