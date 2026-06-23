@@ -109,7 +109,7 @@ export default function App() {
       if (list.length === 0) {
         const defaultGroup: AjoGroup = {
           id: "default",
-          name: "Primary Ajo Group",
+          name: "Primary Co-Op Pool",
           createdAt: new Date().toISOString()
         };
         try {
@@ -559,11 +559,11 @@ export default function App() {
           {/* Western branding */}
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-extrabold shadow-md shadow-indigo-600/10 float-left">
-              AJO
+              CV
             </div>
             <div>
-              <h1 className="text-xl font-black text-slate-800 tracking-tight">Ajo Contribution Portal</h1>
-              <p className="text-xs text-slate-400 font-medium tracking-tight">Rotating Savings & Credit Ledger (ROSCA)</p>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight">CoVest</h1>
+              <p className="text-xs text-slate-400 font-medium tracking-tight">Group Contributions & Real Estate Pools</p>
             </div>
           </div>
 
@@ -590,10 +590,10 @@ export default function App() {
           <div className="space-y-1">
             <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <Users className="w-4 h-4 text-indigo-600 shrink-0" />
-              Active Ajo Group
+              Active Co-Op Group / Asset Pool
             </h2>
             <p className="text-xs text-slate-500">
-              Select or create distinct Ajo groups with custom participants and savings goals.
+              Select or create distinct cooperative savings or asset co-investment groups.
             </p>
           </div>
 
@@ -620,7 +620,7 @@ export default function App() {
             {!isMemberOnlyUrl && (
               <button
                 onClick={async () => {
-                  const groupName = prompt("Enter a name for the new Ajo Group:");
+                  const groupName = prompt("Enter a name for the new Co-Op / Asset Group:");
                   if (groupName && groupName.trim()) {
                     const cleanName = groupName.trim();
                     const newGroupId = "group-" + Date.now();
@@ -863,7 +863,7 @@ export default function App() {
 
       {/* Modern custom footer credit line */}
       <footer className="bg-white border-t border-slate-100 py-4 px-6 text-center text-xs text-slate-400 font-medium">
-        <p>© 2026 Ajo ROSCA Portal • Fully Autonomous WhatsApp Group Contribution Assistant • Running on Gemini 3.5</p>
+        <p>© 2026 CoVest Platform • Fully Autonomous Co-Op & Group Investment Assistant • Running on Gemini 3.5</p>
       </footer>
 
     </div>

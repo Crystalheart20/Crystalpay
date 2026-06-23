@@ -35,6 +35,43 @@ export default function ReceiptVerifier({
     }
   };
 
+  const compressAndResizeImage = (base64Str: string, maxWidth = 1024, maxHeight = 1024, quality = 0.85): Promise<string> => {
+    return new Promise((resolve) => {
+      if (base64Str.length < 150000) {
+        resolve(base64Str);
+        return;
+      }
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+    });
+  };
+
   const processFile = (file: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -44,9 +81,12 @@ export default function ReceiptVerifier({
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-      setErrorMsg("");
-      setResult(null);
+      const base64 = reader.result as string;
+      compressAndResizeImage(base64).then((compressed) => {
+        setImagePreview(compressed);
+        setErrorMsg("");
+        setResult(null);
+      });
     };
     reader.readAsDataURL(file);
   };

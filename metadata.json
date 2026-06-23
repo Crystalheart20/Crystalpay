@@ -1,6 +1,6 @@
 {
-  "name": "WhatsApp Contribution Club",
-  "description": "Automate and coordinate monthly WhatsApp rotating savings (ROSCA) with AI-powered payment verification, digital balloting wheels, and templated group notifications.",
+  "name": "CoVest",
+  "description": "Unified platform for cooperative rotating savings (Ajo/ROSCA) and collective real estate asset pools.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

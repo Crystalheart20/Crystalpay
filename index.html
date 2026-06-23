@@ -3,7 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>CoVest: Group Capital & Asset Pools</title>
+    <script>
+      // Suppress benign browser-extension and environmental iframe errors
+      window.addEventListener('error', function(e) {
+        var msg = e.message || '';
+        if (
+          msg.indexOf('ethereum') !== -1 ||
+          msg.indexOf('Script error') !== -1 ||
+          msg.indexOf('redefine property') !== -1
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      }, true);
+
+      // Suppress unhandled promise rejections originating from extension injects
+      window.addEventListener('unhandledrejection', function(e) {
+        var reason = e.reason && e.reason.stack || '';
+        if (
+          reason.indexOf('ethereum') !== -1 ||
+          reason.indexOf('extension') !== -1
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
