@@ -99,8 +99,8 @@ export default function App() {
       snapshot.forEach((doc) => {
         const data = doc.data();
         list.push({
-          id: doc.id,
-          ...data
+          ...data,
+          id: doc.id
         } as AjoGroup);
       });
       
@@ -130,8 +130,8 @@ export default function App() {
       snapshot.forEach((doc) => {
         const data = doc.data();
         list.push({
-          id: doc.id,
-          ...data
+          ...data,
+          id: doc.id
         });
       });
       
@@ -152,9 +152,10 @@ export default function App() {
       const list: any[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        const docMonthId = doc.id.split("_").pop() || doc.id;
         list.push({
-          id: data.id || doc.id.split("_").pop() || doc.id,
-          ...data
+          ...data,
+          id: data.id || docMonthId
         });
       });
       

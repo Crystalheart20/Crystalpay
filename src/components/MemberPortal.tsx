@@ -351,10 +351,12 @@ export default function MemberPortal({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const copyToClipboard = (text: string, id: string) => {
+  const copyToClipboard = (text: string, id: string, memberId?: string) => {
     navigator.clipboard.writeText(text);
     setCopiedAccNo(id);
-    setSelectedRecipientId(id); // Auto-select this winner for transfer verification proof
+    if (memberId) {
+      setSelectedRecipientId(memberId); // Auto-select this winner for transfer verification proof
+    }
     setTimeout(() => setCopiedAccNo(null), 1500);
   };
 
@@ -716,7 +718,7 @@ export default function MemberPortal({
 
                         <div className="flex flex-col sm:flex-row gap-2 self-end sm:self-center">
                           <button
-                            onClick={() => copyToClipboard(rec.accountNo, `no-${rec.id}`)}
+                            onClick={() => copyToClipboard(rec.accountNo, `no-${rec.id}`, rec.id)}
                             className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-750 font-bold text-xs flex items-center gap-1.5 transition"
                           >
                             {copiedAccNo === `no-${rec.id}` ? (
@@ -735,7 +737,7 @@ export default function MemberPortal({
                           <button
                             onClick={() => {
                               const fullDetails = `Bank: ${rec.bankName}\nAccount Name: ${rec.accountName}\nAccount Number: ${rec.accountNo}`;
-                              copyToClipboard(fullDetails, `full-${rec.id}`);
+                              copyToClipboard(fullDetails, `full-${rec.id}`, rec.id);
                             }}
                             className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition"
                           >
