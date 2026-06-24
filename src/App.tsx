@@ -412,9 +412,18 @@ export default function App() {
       recipientId: targetRecipient
     };
 
+    const updatedPayments = [...targetMonth.payments, newPayment];
+
+    // Update local state immediately so winner sees the payment without waiting for Firestore
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+        ? { ...m, payments: updatedPayments }
+        : m
+    ));
+
     const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
-      payments: [...targetMonth.payments, newPayment],
+      payments: updatedPayments,
       groupId: selectedGroupId
     };
 
@@ -439,6 +448,14 @@ export default function App() {
         recipients: winnerIds, // REPLACES existing recipients instead of appending
         groupId: selectedGroupId
       };
+
+      // Update local state immediately so portal sees winners without waiting for Firestore listener
+      setAllMonths(prev => prev.map(m =>
+        m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+          ? { ...m, recipients: winnerIds }
+          : m
+      ));
+
       try {
         await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
       } catch (e) {
@@ -556,9 +573,18 @@ export default function App() {
     const confirmed = targetMonth.payoutConfirmedByRecipients || [];
     if (confirmed.includes(memberId)) return;
 
+    const updatedConfirmed = [...confirmed, memberId];
+
+    // Update local state immediately
+    setAllMonths(prev => prev.map(m =>
+      m.id === monthId && (m.groupId || "default") === selectedGroupId
+        ? { ...m, payoutConfirmedByRecipients: updatedConfirmed }
+        : m
+    ));
+
     const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
-      payoutConfirmedByRecipients: [...confirmed, memberId],
+      payoutConfirmedByRecipients: updatedConfirmed,
       groupId: selectedGroupId
     };
 
@@ -580,6 +606,13 @@ export default function App() {
       }
       return p;
     });
+
+    // Update local state immediately
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+        ? { ...m, payments: updatedPayments }
+        : m
+    ));
 
     const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
