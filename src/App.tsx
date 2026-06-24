@@ -7,8 +7,30 @@ import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
 import RealEstatePools from "./components/RealEstatePools";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
-import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
+
+// Helper to recursively remove all undefined values from an object for Firestore compatibility
+function cleanData<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanData) as any;
+  }
+  const result: any = {};
+  for (const key of Object.keys(obj)) {
+    const value = (obj as any)[key];
+    if (value !== undefined) {
+      result[key] = cleanData(value);
+    }
+  }
+  return result;
+}
+
+const setDoc = async (docRef: any, data: any) => {
+  return firebaseSetDoc(docRef, cleanData(data));
+};
 
 // Zero-out default / seed lists to start in pure self-service mode (no mock data)
 const INITIAL_MEMBERS: Member[] = [];
@@ -376,7 +398,7 @@ export default function App() {
   const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
-    const targetRecipient = recipientId || targetMonth.recipients[0];
+    const targetRecipient = recipientId || targetMonth.recipients[0] || "unassigned";
     const exists = targetMonth.payments.some(p => p.memberId === memberId && p.recipientId === targetRecipient);
     if (exists) return;
 
