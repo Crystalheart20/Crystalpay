@@ -94,12 +94,30 @@ export default function MemberPortal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
   const loggedInMember = members.find(m => m.id === loggedInMemberId);
+
+  // Self-filter by the logged-in member's group so the portal always shows
+  // the correct data regardless of which group the admin currently has selected
+  const memberGroupId = loggedInMember?.groupId || "default";
+  const groupMembers = loggedInMemberId
+    ? members.filter(m => (m.groupId || "default") === memberGroupId)
+    : members;
+  const groupMonths = loggedInMemberId
+    ? months.filter(m => (m.groupId || "default") === memberGroupId)
+    : months;
+
+  // Pick the active month for this member's group
+  const currentMonth = (() => {
+    const activeMonth = groupMonths.find(m => m.status === "ACTIVE");
+    if (activeMonth) return activeMonth;
+    const byId = groupMonths.find(m => m.id === currentMonthId);
+    if (byId) return byId;
+    return groupMonths.sort((a, b) => b.id.localeCompare(a.id))[0] || months.find(m => m.id === currentMonthId) || months[0];
+  })();
 
   // Constants & Metrics
   const activeRecipientsList = currentMonth 
-    ? members.filter(m => currentMonth.recipients.includes(m.id))
+    ? groupMembers.filter(m => currentMonth.recipients.includes(m.id))
     : [];
 
   const targetAmount = currentMonth?.targetAmountPerMember || 100000;
@@ -113,7 +131,7 @@ export default function MemberPortal({
       return [];
     }
 
-    const recipients = members.filter(m => currentMonth.recipients.includes(m.id));
+    const recipients = groupMembers.filter(m => currentMonth.recipients.includes(m.id));
     if (recipients.length === 0) return [];
 
     if (recipients.length === 1) {
@@ -124,7 +142,7 @@ export default function MemberPortal({
     if (recipients.length === 2) {
       // 2 recipients split-billing flow:
       // Sort non-recipient members (contributors) by ID to be perfectly deterministic across all portals
-      const contributors = members
+      const contributors = groupMembers
         .filter(m => !currentMonth.recipients.includes(m.id))
         .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -371,7 +389,7 @@ export default function MemberPortal({
   };
 
   // Compute calculated metrics
-  const poolSize = targetAmount * (members.length - (currentMonth?.recipients.length || 0));
+  const poolSize = targetAmount * (groupMembers.length - (currentMonth?.recipients.length || 0));
 
   // Calculate this specific recipient's expected payout (half of total pool if 2 recipients, whole pool if 1)
   const myExpectedPayout = (() => {
@@ -380,7 +398,7 @@ export default function MemberPortal({
     if (totalRecipients === 0) return 0;
     
     // Total contributors (non-recipients)
-    const contributors = members.filter(m => !currentMonth.recipients.includes(m.id));
+    const contributors = groupMembers.filter(m => !currentMonth.recipients.includes(m.id));
     const totalPool = contributors.length * targetAmount;
     
     if (totalRecipients === 1) {
@@ -807,14 +825,14 @@ export default function MemberPortal({
                       const incomingPayments = currentMonth?.payments.filter(p => p.recipientId === loggedInMemberId) || [];
                       
                       // Deterministic payment assignment matches MemberPortal expected payment calculation:
-                      const expectedPayers = members.filter(m => {
+                      const expectedPayers = groupMembers.filter(m => {
                         if (!currentMonth) return false;
                         if (currentMonth.recipients.includes(m.id)) return false; // Recipients do not contribute
                         
                         if (currentMonth.recipients.length === 1) {
                           return true; // everyone pays the single recipient
                         } else if (currentMonth.recipients.length === 2) {
-                          const contributors = members
+                          const contributors = groupMembers
                             .filter(mb => !currentMonth.recipients.includes(mb.id))
                             .sort((a, b) => a.id.localeCompare(b.id));
                           const index = contributors.findIndex(c => c.id === m.id);

@@ -855,8 +855,8 @@ export default function App() {
         <div className="min-h-[450px]">
           {activeTab === "portal" && (
             <MemberPortal
-              members={members}
-              months={months}
+              members={allMembers}
+              months={allMonths}
               currentMonthId={currentMonthId}
               currency="₦"
               onAddMember={handleAddMember}
