@@ -97,7 +97,11 @@ export default function App() {
     const unsubscribe = onSnapshot(collection(db, "groups"), async (snapshot) => {
       const list: AjoGroup[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data() as AjoGroup);
+        const data = doc.data();
+        list.push({
+          id: doc.id,
+          ...data
+        } as AjoGroup);
       });
       
       if (list.length === 0) {
@@ -124,7 +128,11 @@ export default function App() {
     const unsubscribe = onSnapshot(collection(db, "members"), (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data());
+        const data = doc.data();
+        list.push({
+          id: doc.id,
+          ...data
+        });
       });
       
       const mappedList = list.map(m => {
