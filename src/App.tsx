@@ -32,7 +32,6 @@ const setDoc = async (docRef: any, data: any) => {
   return firebaseSetDoc(docRef, cleanData(data));
 };
 
-// Zero-out default / seed lists to start in pure self-service mode (no mock data)
 const INITIAL_MEMBERS: Member[] = [];
 
 const INITIAL_MONTHS: ContributionMonth[] = [
@@ -41,9 +40,9 @@ const INITIAL_MONTHS: ContributionMonth[] = [
     name: "June 2026",
     targetAmountPerMember: 100000,
     recipientsCount: 2,
-    recipients: [], // Start without default mock winners
+    recipients: [],
     status: "ACTIVE",
-    payments: [] // Start without default mock payments
+    payments: []
   }
 ];
 
@@ -109,8 +108,8 @@ export default function App() {
     return params.get("role") === "member" || params.get("portal") === "true";
   });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
+  const [firestoreMonthsReady, setFirestoreMonthsReady] = useState<boolean>(false);
 
-  // Derived filtered members and months for the selected group
   const members = allMembers.filter(m => (m.groupId || "default") === selectedGroupId);
   const months = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
 
@@ -169,10 +168,15 @@ export default function App() {
   }, []);
 
   // Subscribe to months in central Firestore
+  // PERMANENT FIX: skip any document whose ID has no underscore prefix
+  // (e.g. bare "2026-06" is rogue; valid ones are "default_2026-06")
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "months"), (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
+        // Skip rogue documents that have no groupId prefix in their doc ID
+        if (!doc.id.includes("_")) return;
+
         const data = doc.data();
         const docMonthId = doc.id.split("_").pop() || doc.id;
         list.push({
@@ -183,7 +187,6 @@ export default function App() {
       
       const cleanedList = list.map(mon => {
         const gId = mon.groupId || "default";
-        
         return {
           ...mon,
           groupId: gId,
@@ -194,12 +197,16 @@ export default function App() {
       });
 
       setAllMonths(cleanedList);
+      setFirestoreMonthsReady(true); // Mark Firestore as loaded — auto-seed can now safely check
     });
     return () => unsubscribe();
   }, []);
 
-  // Auto-seed initial round if current group's months is empty
+  // Auto-seed initial round ONLY after Firestore has loaded and confirmed no months exist
+  // Without firestoreMonthsReady guard, this fires on every fresh device load while
+  // Firestore is still loading, overwriting existing ballot winners with a blank month
   useEffect(() => {
+    if (!firestoreMonthsReady) return; // Wait for Firestore to finish loading first
     if (selectedGroupId) {
       const currentGroupMonths = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
       if (currentGroupMonths.length === 0) {
@@ -207,7 +214,7 @@ export default function App() {
           id: "2026-06",
           name: "June 2026",
           targetAmountPerMember: 100000,
-          recipientsCount: 2,
+          recipientsCount: 1,
           recipients: [],
           status: "ACTIVE" as const,
           payments: [],
@@ -217,7 +224,7 @@ export default function App() {
         setDoc(doc(db, "months", docId), initialMonth).catch(console.error);
       }
     }
-  }, [allMonths, selectedGroupId]);
+  }, [firestoreMonthsReady, selectedGroupId]);
 
   // Synchronize selectedGroupId with logged-in member's groupId if accessing via member portal
   useEffect(() => {
@@ -257,16 +264,13 @@ export default function App() {
   }, [allMonths]);
 
   const currentMonth = months.find(m => m.id === currentMonthId) || months[0] || INITIAL_MONTHS[0];
-  const currencySymbol = currentMonth?.id ? "NGN" : "NGN"; // Defaults
+  const currencySymbol = currentMonth?.id ? "NGN" : "NGN";
 
-  // Eligible members for ballot box (members who haven't won a rotation yet)
   const eligibleMembers = members.filter(m => {
-    // Has not won currentMonth and hasn't collected historically
     const alreadyWon = months.some(mon => mon.recipients.includes(m.id)) || m.collectedMonths.length > 0;
     return !alreadyWon && m.isActive;
   });
 
-  // Action: Add/Register a New Member
   const handleAddMember = async (newMem: Omit<Member, "id" | "collectedMonths" | "isActive text-indigo-600">) => {
     const freshId = "mem-" + Date.now();
     const fresh: Member & { groupId: string } = {
@@ -284,7 +288,6 @@ export default function App() {
     }
   };
 
-  // Action: Remove/Delete member
   const handleRemoveMember = async (id: string) => {
     try {
       await deleteDoc(doc(db, "members", id));
@@ -302,7 +305,6 @@ export default function App() {
     }
   };
 
-  // Action: Reset entire application to pristine start
   const handleResetToPristine = async () => {
     try {
       for (const m of members) {
@@ -328,14 +330,12 @@ export default function App() {
     }
   };
 
-  // Action: Reset the ballot and payments for the current month
   const handleResetBallot = async () => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
 
     const recipientIds = targetMonth.recipients || [];
 
-    // Reset month state: clear recipients, payments, and payouts confirmation
     const updatedMonth: ContributionMonth & { groupId: string } = {
       ...targetMonth,
       recipients: [],
@@ -350,7 +350,6 @@ export default function App() {
       console.error(e);
     }
 
-    // Clear winner histories in ALL group members for this month
     for (const m of members) {
       if (recipientIds.includes(m.id) || m.collectedMonths.includes(currentMonthId)) {
         const updatedMem: Member = {
@@ -365,11 +364,9 @@ export default function App() {
       }
     }
 
-    // Clear saved notifications for draws
     setLastDrawNotice("");
   };
 
-  // Action: Set/configure current round variables
   const handleConfigureMonth = async (amount: number, spots: 1 | 2, currencyCode: string) => {
     const updated = months.map(m => {
       if (m.id === currentMonthId) {
@@ -394,7 +391,6 @@ export default function App() {
     }
   };
 
-  // Action: Record payment verified (manually or through Gemini OCR)
   const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
@@ -414,7 +410,6 @@ export default function App() {
 
     const updatedPayments = [...targetMonth.payments, newPayment];
 
-    // Update local state immediately so winner sees the payment without waiting for Firestore
     setAllMonths(prev => prev.map(m =>
       m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
         ? { ...m, payments: updatedPayments }
@@ -434,22 +429,19 @@ export default function App() {
     }
   };
 
-  // Action: Approve Ballot Wheel Selection
   const handleApproveBallotSelection = async (selectedWinners: Member[]) => {
     const winnerIds = selectedWinners.map(w => w.id);
     
-    // Update active month recipients list
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (targetMonth) {
       const oldRecipients = targetMonth.recipients || [];
       
       const updatedMonth: ContributionMonth & { groupId: string } = {
         ...targetMonth,
-        recipients: winnerIds, // REPLACES existing recipients instead of appending
+        recipients: winnerIds,
         groupId: selectedGroupId
       };
 
-      // Update local state immediately so portal sees winners without waiting for Firestore listener
       setAllMonths(prev => prev.map(m =>
         m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
           ? { ...m, recipients: winnerIds }
@@ -462,8 +454,6 @@ export default function App() {
         console.error(e);
       }
 
-      // Update members:
-      // 1. Remove this month from old recipients who are no longer in the new winners list
       const removedRecipients = oldRecipients.filter(id => !winnerIds.includes(id));
       for (const mId of removedRecipients) {
         const memObj = members.find(m => m.id === mId);
@@ -480,7 +470,6 @@ export default function App() {
         }
       }
 
-      // 2. Add this month to new recipients
       for (const mId of winnerIds) {
         const memObj = members.find(m => m.id === mId);
         if (memObj) {
@@ -499,7 +488,6 @@ export default function App() {
       }
     }
 
-    // Trigger notification packet mock in chat
     const winnersStr = selectedWinners.map(w => `*${w.name}*`).join(" and ");
     const notificationText = `📢 *OFFICIAL BALLOT RESULT* 📢\n` +
       `🏆 Recipient selected for *${currentMonth.name}*: ${winnersStr}!\n` +
@@ -515,7 +503,6 @@ export default function App() {
     setActiveTab("whatsapp");
   };
 
-  // Action: Toggle / Manual overriding confirmation
   const handleManualPayment = async (memberId: string, approved: boolean, recipientId?: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
@@ -523,7 +510,6 @@ export default function App() {
     let updatedMonth: ContributionMonth;
 
     if (approved) {
-      // If recipientId is specified, only pay them, otherwise pay all winners this member owes
       const recipientsToPay = recipientId ? [recipientId] : targetMonth.recipients.filter(rId => rId !== memberId);
       
       let newPayments = [...targetMonth.payments];
@@ -565,7 +551,6 @@ export default function App() {
     }
   };
 
-  // Action: Confirm pot payout receipt by winning member
   const handleConfirmPayoutReceipt = async (memberId: string, monthId: string) => {
     const targetMonth = months.find(m => m.id === monthId);
     if (!targetMonth) return;
@@ -575,7 +560,6 @@ export default function App() {
 
     const updatedConfirmed = [...confirmed, memberId];
 
-    // Update local state immediately
     setAllMonths(prev => prev.map(m =>
       m.id === monthId && (m.groupId || "default") === selectedGroupId
         ? { ...m, payoutConfirmedByRecipients: updatedConfirmed }
@@ -595,7 +579,6 @@ export default function App() {
     }
   };
 
-  // Action: Confirm individual payment receipt by winning recipient
   const handleConfirmPaymentCredit = async (memberId: string, recipientId: string, transactionRef: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
@@ -607,7 +590,6 @@ export default function App() {
       return p;
     });
 
-    // Update local state immediately
     setAllMonths(prev => prev.map(m =>
       m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
         ? { ...m, payments: updatedPayments }
@@ -627,7 +609,6 @@ export default function App() {
     }
   };
 
-  // Action: Complete and close existing month pool
   const handleCloseRound = async () => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
@@ -644,11 +625,9 @@ export default function App() {
       console.error(e);
     }
 
-    // Setup newly initialized following month automatically!
     const nextMonthId = "2026-07";
     const nextMonthName = "July 2026";
     
-    // Check if next month exists, or append
     const exists = months.some(m => m.id === nextMonthId);
     if (!exists) {
       const nextMonthObj: ContributionMonth & { groupId: string } = {
@@ -683,11 +662,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       
-      {/* Dynamic Header Frame */}
       <header className="bg-white border-b border-slate-100 py-4 px-6 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           
-          {/* Western branding */}
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-extrabold shadow-md shadow-indigo-600/10 float-left">
               CV
@@ -698,7 +675,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Active Round Metrics Indicator */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="bg-indigo-50/50 rounded-xl px-4 py-1.5 border border-indigo-100 flex items-center gap-2 text-xs text-indigo-700 font-bold">
               <Calendar className="h-4 w-4" />
@@ -713,10 +689,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Core Viewport area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        {/* Group Selector & Creation Panel */}
         <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="space-y-1">
             <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -782,7 +756,6 @@ export default function App() {
           </div>
         </div>
         
-        {/* Share Utility / Mode Banner */}
         {!isMemberOnlyUrl ? (
           <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-indigo-500/10 border border-indigo-150/50 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="space-y-1">
@@ -804,20 +777,14 @@ export default function App() {
               }`}
             >
               {copiedLink ? (
-                <>
-                  <span>✓ Copied Link!</span>
-                </>
+                <><span>✓ Copied Link!</span></>
               ) : (
-                <>
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>Copy Member Link</span>
-                </>
+                <><Share2 className="w-3.5 h-3.5" /><span>Copy Member Link</span></>
               )}
             </button>
           </div>
         ) : null}
 
-        {/* Navigation Tabs Bar */}
         <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-5xl gap-1">
           <button
             onClick={() => setActiveTab("portal")}
@@ -884,7 +851,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Tab Viewport Routing Container */}
         <div className="min-h-[450px]">
           {activeTab === "portal" && (
             <MemberPortal
@@ -950,7 +916,6 @@ export default function App() {
           {activeTab === "whatsapp" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               
-              {/* Info panel */}
               <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <MessageSquare className="h-5 w-5 text-emerald-600" />
@@ -983,7 +948,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Mobile Phone Mock UI */}
               <div className="lg:col-span-5">
                 <WhatsAppSimulator
                   members={members}
@@ -999,7 +963,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Modern custom footer credit line */}
       <footer className="bg-white border-t border-slate-100 py-4 px-6 text-center text-xs text-slate-400 font-medium">
         <p>© 2026 CoVest Platform • Fully Autonomous Co-Op & Group Investment Assistant • Running on Gemini 3.5</p>
       </footer>
