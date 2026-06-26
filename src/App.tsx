@@ -7,7 +7,7 @@ import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
 import RealEstatePools from "./components/RealEstatePools";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
-import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 // Helper to recursively remove all undefined values from an object for Firestore compatibility
@@ -202,14 +202,14 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Auto-seed initial round ONLY after Firestore has loaded and confirmed no months exist
-  // Without firestoreMonthsReady guard, this fires on every fresh device load while
-  // Firestore is still loading, overwriting existing ballot winners with a blank month
+  // Auto-seed ONLY if the Firestore document does not already exist
+  // Uses getDoc to check first — NEVER overwrites existing ballot/winner data
   useEffect(() => {
-    if (!firestoreMonthsReady) return; // Wait for Firestore to finish loading first
-    if (selectedGroupId) {
-      const currentGroupMonths = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
-      if (currentGroupMonths.length === 0) {
+    if (!selectedGroupId) return;
+    const docId = `${selectedGroupId}_2026-06`;
+    const docRef = doc(db, "months", docId);
+    getDoc(docRef).then((snap) => {
+      if (!snap.exists()) {
         const initialMonth: ContributionMonth & { groupId: string } = {
           id: "2026-06",
           name: "June 2026",
@@ -220,11 +220,11 @@ export default function App() {
           payments: [],
           groupId: selectedGroupId
         };
-        const docId = `${selectedGroupId}_2026-06`;
-        setDoc(doc(db, "months", docId), initialMonth).catch(console.error);
+        setDoc(docRef, initialMonth).catch(console.error);
       }
-    }
-  }, [firestoreMonthsReady, selectedGroupId]);
+      // Document exists — do nothing, never overwrite
+    }).catch(console.error);
+  }, [selectedGroupId]);
 
   // Synchronize selectedGroupId with logged-in member's groupId if accessing via member portal
   useEffect(() => {
