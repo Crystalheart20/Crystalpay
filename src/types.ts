@@ -36,6 +36,7 @@ export interface ContributionMonth {
   payments: PaymentLog[]; // Log of confirmed payments
   closingRemark?: string; // AI generated closing template
   payoutConfirmedByRecipients?: string[]; // List of winner IDs who confirmed bank receipt
+  contributionDeadline?: string; // ISO date string e.g. "2026-06-28"
 }
 
 export interface ChatMessage {

@@ -94,31 +94,24 @@ export default function MemberPortal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
   const loggedInMember = members.find(m => m.id === loggedInMemberId);
-
-  // Self-filter by the logged-in member's group so the portal always shows
-  // the correct data regardless of which group the admin currently has selected
-  const memberGroupId = loggedInMember?.groupId || "default";
-  const groupMembers = loggedInMemberId
-    ? members.filter(m => (m.groupId || "default") === memberGroupId)
-    : members;
-  const groupMonths = loggedInMemberId
-    ? months.filter(m => (m.groupId || "default") === memberGroupId)
-    : months;
-
-  // Pick the active month for this member's group
-  const currentMonth = (() => {
-    const activeMonth = groupMonths.find(m => m.status === "ACTIVE");
-    if (activeMonth) return activeMonth;
-    const byId = groupMonths.find(m => m.id === currentMonthId);
-    if (byId) return byId;
-    return groupMonths.sort((a, b) => b.id.localeCompare(a.id))[0] || months.find(m => m.id === currentMonthId) || months[0];
-  })();
 
   // Constants & Metrics
   const activeRecipientsList = currentMonth 
-    ? groupMembers.filter(m => currentMonth.recipients.includes(m.id))
+    ? members.filter(m => currentMonth.recipients.includes(m.id))
     : [];
+
+  // Countdown to deadline
+  const deadlineCountdown = (() => {
+    if (!currentMonth?.contributionDeadline) return null;
+    const deadline = new Date(currentMonth.contributionDeadline + "T23:59:59");
+    const now = new Date();
+    const diffMs = deadline.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const formatted = deadline.toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    return { diffDays, formatted, overdue: diffDays < 0 };
+  })();
 
   const targetAmount = currentMonth?.targetAmountPerMember || 100000;
 
@@ -131,7 +124,7 @@ export default function MemberPortal({
       return [];
     }
 
-    const recipients = groupMembers.filter(m => currentMonth.recipients.includes(m.id));
+    const recipients = members.filter(m => currentMonth.recipients.includes(m.id));
     if (recipients.length === 0) return [];
 
     if (recipients.length === 1) {
@@ -142,7 +135,7 @@ export default function MemberPortal({
     if (recipients.length === 2) {
       // 2 recipients split-billing flow:
       // Sort non-recipient members (contributors) by ID to be perfectly deterministic across all portals
-      const contributors = groupMembers
+      const contributors = members
         .filter(m => !currentMonth.recipients.includes(m.id))
         .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -389,7 +382,7 @@ export default function MemberPortal({
   };
 
   // Compute calculated metrics
-  const poolSize = targetAmount * (groupMembers.length - (currentMonth?.recipients.length || 0));
+  const poolSize = targetAmount * (members.length - (currentMonth?.recipients.length || 0));
 
   // Calculate this specific recipient's expected payout (half of total pool if 2 recipients, whole pool if 1)
   const myExpectedPayout = (() => {
@@ -398,7 +391,7 @@ export default function MemberPortal({
     if (totalRecipients === 0) return 0;
     
     // Total contributors (non-recipients)
-    const contributors = groupMembers.filter(m => !currentMonth.recipients.includes(m.id));
+    const contributors = members.filter(m => !currentMonth.recipients.includes(m.id));
     const totalPool = contributors.length * targetAmount;
     
     if (totalRecipients === 1) {
@@ -617,7 +610,39 @@ export default function MemberPortal({
       ) : (
         /* Step 2: Member dashboard portal! */
         <div className="space-y-6">
-          
+
+          {/* Deadline Countdown Banner */}
+          {deadlineCountdown && (
+            <div className={`rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border ${
+              deadlineCountdown.overdue
+                ? "bg-red-50 border-red-200"
+                : deadlineCountdown.diffDays <= 3
+                ? "bg-amber-50 border-amber-200"
+                : "bg-indigo-50 border-indigo-100"
+            }`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">{deadlineCountdown.overdue ? "🚨" : deadlineCountdown.diffDays <= 3 ? "⚠️" : "⏰"}</span>
+                <div>
+                  <p className={`text-sm font-black ${deadlineCountdown.overdue ? "text-red-700" : deadlineCountdown.diffDays <= 3 ? "text-amber-700" : "text-indigo-700"}`}>
+                    {deadlineCountdown.overdue
+                      ? `Payment Deadline Passed ${Math.abs(deadlineCountdown.diffDays)} day(s) ago!`
+                      : deadlineCountdown.diffDays === 0
+                      ? "Payment Due TODAY!"
+                      : `${deadlineCountdown.diffDays} day${deadlineCountdown.diffDays === 1 ? "" : "s"} left to pay`}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${deadlineCountdown.overdue ? "text-red-500" : "text-slate-500"}`}>
+                    Deadline: {deadlineCountdown.formatted} · ₦{currentMonth?.targetAmountPerMember?.toLocaleString()} per member
+                  </p>
+                </div>
+              </div>
+              {!deadlineCountdown.overdue && (
+                <div className={`text-3xl font-black tabular-nums ${deadlineCountdown.diffDays <= 3 ? "text-amber-600" : "text-indigo-600"}`}>
+                  {deadlineCountdown.diffDays}d
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Dashboard Header Bar */}
           <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center gap-3">
@@ -825,14 +850,14 @@ export default function MemberPortal({
                       const incomingPayments = currentMonth?.payments.filter(p => p.recipientId === loggedInMemberId) || [];
                       
                       // Deterministic payment assignment matches MemberPortal expected payment calculation:
-                      const expectedPayers = groupMembers.filter(m => {
+                      const expectedPayers = members.filter(m => {
                         if (!currentMonth) return false;
                         if (currentMonth.recipients.includes(m.id)) return false; // Recipients do not contribute
                         
                         if (currentMonth.recipients.length === 1) {
                           return true; // everyone pays the single recipient
                         } else if (currentMonth.recipients.length === 2) {
-                          const contributors = groupMembers
+                          const contributors = members
                             .filter(mb => !currentMonth.recipients.includes(mb.id))
                             .sort((a, b) => a.id.localeCompare(b.id));
                           const index = contributors.findIndex(c => c.id === m.id);

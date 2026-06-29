@@ -9,6 +9,7 @@ interface WhatsAppSimulatorProps {
   onReceiptProcessed: (memberId: string, amount: number, transactionRef: string, senderName: string) => void;
   lastDrawNotice?: string;
   activeRecipients: Member[];
+  currentMonth?: any;
 }
 
 export default function WhatsAppSimulator({
@@ -17,12 +18,33 @@ export default function WhatsAppSimulator({
   currency,
   onReceiptProcessed,
   lastDrawNotice,
-  activeRecipients
+  activeRecipients,
+  currentMonth
 }: WhatsAppSimulatorProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [simulateMemberId, setSimulateMemberId] = useState("");
   const [isBotLoading, setIsBotLoading] = useState(false);
+  const [deadlineCopied, setDeadlineCopied] = useState(false);
+
+  const handleCopyDeadlineReminder = () => {
+    if (!currentMonth) return;
+    const deadline = currentMonth.contributionDeadline
+      ? new Date(currentMonth.contributionDeadline + "T23:59:59").toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+      : "as soon as possible";
+    const recipients = activeRecipients.length > 0
+      ? activeRecipients.map((r: any) => `▫️ *${r.name}* — ${r.bankName}, Acct: ${r.accountNo}`).join("\n")
+      : "_(ballot not yet drawn)_";
+    const msg = `⏰ *PAYMENT REMINDER — ${currentMonth.name || "This Month"}*\n\n` +
+      `Dear CoVest Members,\n\n` +
+      `This is a reminder that your contribution of *₦${(currentMonth.targetAmountPerMember || 0).toLocaleString()}* is due by *${deadline}*.\n\n` +
+      `🏦 *Pay directly to this month's recipient(s):*\n${recipients}\n\n` +
+      `After payment, upload your receipt proof on the member portal so the recipient can confirm.\n\n` +
+      `Thank you for keeping the circle strong! 💪`;
+    navigator.clipboard.writeText(msg);
+    setDeadlineCopied(true);
+    setTimeout(() => setDeadlineCopied(false), 2500);
+  };
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   // Set up default messaging state
@@ -286,6 +308,19 @@ export default function WhatsAppSimulator({
 
       {/* Simulation Controls Dock inside footer */}
       <div className="bg-[#f0f2f5] p-2 border-t border-slate-200 space-y-1.5 rounded-b-2xl">
+
+        {/* Deadline Reminder Copy Button */}
+        {currentMonth?.contributionDeadline && (
+          <button
+            onClick={handleCopyDeadlineReminder}
+            className={`w-full py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition ${
+              deadlineCopied ? "bg-emerald-600 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"
+            }`}
+          >
+            {deadlineCopied ? "✓ Reminder Copied! Paste in WhatsApp" : "📋 Copy Deadline Reminder Message"}
+          </button>
+        )}
+
         <div className="grid grid-cols-2 gap-1.5">
           <div>
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight block mb-0.5">Simulate Actor</span>

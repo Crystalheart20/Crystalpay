@@ -10,6 +10,8 @@ interface DashboardProps {
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
   onRemoveMember: (id: string) => void;
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
+  onSetDeadline: (deadlineDate: string) => void;
+  currentMonthDeadline?: string;
   onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
   onCloseRound: () => void;
   onResetToPristine?: () => void;
@@ -24,6 +26,8 @@ export default function Dashboard({
   onAddMember,
   onRemoveMember,
   onConfigureMonth,
+  onSetDeadline,
+  currentMonthDeadline,
   onManualPayment,
   onCloseRound,
   onResetToPristine,
@@ -38,6 +42,8 @@ export default function Dashboard({
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Month Configuration State
+  const [deadlineInput, setDeadlineInput] = useState<string>("");
+  const [deadlineSaved, setDeadlineSaved] = useState(false);
   const [amountInput, setAmountInput] = useState(100000);
   const [spotsInput, setSpotsInput] = useState<1 | 2>(1);
   const [currencyInput, setCurrencyInput] = useState("NGN");
@@ -48,6 +54,7 @@ export default function Dashboard({
     if (currentMonth) {
       setAmountInput(currentMonth.targetAmountPerMember);
       setSpotsInput(currentMonth.recipientsCount);
+      if (currentMonth.contributionDeadline) setDeadlineInput(currentMonth.contributionDeadline);
     }
   }, [currentMonthId]);
 
@@ -118,6 +125,13 @@ export default function Dashboard({
 
   const handleApplyConfiguration = () => {
     onConfigureMonth(amountInput, spotsInput, currencyInput);
+  };
+
+  const handleSaveDeadline = () => {
+    if (!deadlineInput) return;
+    onSetDeadline(deadlineInput);
+    setDeadlineSaved(true);
+    setTimeout(() => setDeadlineSaved(false), 2500);
   };
 
   const handleGenerateWhatsAppNotice = async (type: "draw" | "reminder" | "closing") => {
@@ -266,6 +280,7 @@ export default function Dashboard({
             </h3>
             <p className="text-[10px] text-slate-400 mt-1">
               Target recipients: {currentMonth?.recipientsCount || 1} Slot(s)
+              {currentMonthDeadline && <> · Deadline: <strong>{new Date(currentMonthDeadline).toLocaleDateString("en-NG", {day:"numeric", month:"long", year:"numeric"})}</strong></>}
             </p>
           </div>
           <div className="p-3 bg-rose-50 rounded-xl text-rose-600">
@@ -571,6 +586,32 @@ export default function Dashboard({
               >
                 Apply Parameters
               </button>
+
+              {/* Deadline Setter */}
+              <div className="pt-2 border-t border-slate-200">
+                <label className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                  ⏰ Set Payment Deadline
+                </label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="date"
+                    value={deadlineInput}
+                    onChange={(e) => setDeadlineInput(e.target.value)}
+                    className="flex-1 text-xs p-2 rounded-lg bg-white border border-slate-300 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleSaveDeadline}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold transition ${deadlineSaved ? "bg-emerald-600 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"}`}
+                  >
+                    {deadlineSaved ? "✓ Saved!" : "Set"}
+                  </button>
+                </div>
+                {currentMonthDeadline && (
+                  <p className="text-[10px] text-emerald-700 font-semibold mt-1">
+                    ✅ Deadline: {new Date(currentMonthDeadline + "T00:00:00").toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  </p>
+                )}
+              </div>
 
               {currentMonth && onResetBallot && (
                 <div className="pt-2">

@@ -391,6 +391,23 @@ export default function App() {
     }
   };
 
+  // Action: Set contribution deadline for current month
+  const handleSetDeadline = async (deadlineDate: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+    const updated = { ...targetMonth, contributionDeadline: deadlineDate, groupId: selectedGroupId };
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+        ? { ...m, contributionDeadline: deadlineDate }
+        : m
+    ));
+    try {
+      await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updated);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
     if (!targetMonth) return;
@@ -652,24 +669,11 @@ export default function App() {
   };
 
   const [copiedLink, setCopiedLink] = useState(false);
-
   const handleCopyLink = () => {
     const link = window.location.origin + window.location.pathname + `?role=member&groupId=${selectedGroupId}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
-  };
-
-  // NEW: WhatsApp invite — opens WhatsApp with a pre-written message containing the member portal link
-  const handleWhatsAppInvite = () => {
-    const link = window.location.origin + window.location.pathname + `?role=member&groupId=${selectedGroupId}`;
-    const groupName = groups.find(g => g.id === selectedGroupId)?.name || "our CoVest group";
-    const message =
-      `👋 You've been invited to join *${groupName}* on CoVest.\n\n` +
-      `CoVest helps us manage our Ajo contributions digitally — track payments, see your status, and confirm receipts.\n\n` +
-      `Tap the link below to access your member portal:\n${link}`;
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(waUrl, "_blank");
   };
 
   return (
@@ -781,31 +785,20 @@ export default function App() {
               </p>
             </div>
             
-            {/* UPDATED: Two invite buttons — copy link + WhatsApp share */}
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={handleCopyLink}
-                className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition ${
-                  copiedLink 
-                    ? "bg-emerald-600 text-white shadow font-semibold" 
-                    : "bg-indigo-600 hover:bg-indigo-700 text-white shadow font-semibold"
-                }`}
-              >
-                {copiedLink ? (
-                  <span>✓ Copied!</span>
-                ) : (
-                  <><Share2 className="w-3.5 h-3.5" /><span>Copy Link</span></>
-                )}
-              </button>
-
-              <button
-                onClick={handleWhatsAppInvite}
-                className="px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition bg-emerald-500 hover:bg-emerald-600 text-white shadow"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Share via WhatsApp</span>
-              </button>
-            </div>
+            <button
+              onClick={handleCopyLink}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition ${
+                copiedLink 
+                  ? "bg-emerald-600 text-white shadow font-semibold" 
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white shadow font-semibold"
+              }`}
+            >
+              {copiedLink ? (
+                <><span>✓ Copied Link!</span></>
+              ) : (
+                <><Share2 className="w-3.5 h-3.5" /><span>Copy Member Link</span></>
+              )}
+            </button>
           </div>
         ) : null}
 
@@ -914,6 +907,8 @@ export default function App() {
               onCloseRound={handleCloseRound}
               onResetToPristine={handleResetToPristine}
               onResetBallot={handleResetBallot}
+              onSetDeadline={handleSetDeadline}
+              currentMonthDeadline={currentMonth?.contributionDeadline}
             />
           )}
 
@@ -980,6 +975,7 @@ export default function App() {
                   onReceiptProcessed={(mId, amt, ref, sName) => handleRecordPayment(mId, amt, ref, sName)}
                   lastDrawNotice={lastDrawNotice}
                   activeRecipients={members.filter(m => currentMonth?.recipients.includes(m.id))}
+                  currentMonth={currentMonth}
                 />
               </div>
             </div>
