@@ -104,9 +104,13 @@ app.post("/api/verify-receipt", async (req, res) => {
 
     try {
       const ai = getGeminiClient();
+      const today = new Date().toISOString().split("T")[0]; // e.g. "2026-06-29"
       const prompt = `You are a WhatsApp Group Contribution Auditor for a Rotating Savings (ROSCA/Ajo/Chit Fund) club.
 Analyze the provided receipt/proof (which is either an image, a transactional text message, or both).
 Your task is to determine whether this is a legitimate transaction proof of a contribution.
+
+IMPORTANT: Today's date is ${today}. Any transaction dated on or before today is NOT a future date and must NOT be flagged as suspicious on the basis of its date. The current year is 2026 and transactions in 2026 are completely normal and expected.
+
 The contribution target details are:
 - Member claiming payment: "${memberName || 'Unknown'}"
 - Expected core amount: ${expectedAmount || 'Any'}
@@ -118,7 +122,7 @@ Analyze the proof and extract:
 4. Currency symbol or code (e.g., NGN, USD, GHS).
 5. Date of payment.
 6. Reference / Transaction ID.
-7. Set status to "APPROVED" if it looks legitimate and the amount is close to the expectedAmount. Otherwise, set status to "FLAGGED" and explain why in explanation.`;
+7. Set status to "APPROVED" if it looks legitimate and the amount is close to the expectedAmount. Otherwise, set status to "FLAGGED" and explain why in explanation. Do NOT flag a receipt solely because its date is in 2026 — that is the current year.`;
 
       let contentParts: any[] = [];
       
