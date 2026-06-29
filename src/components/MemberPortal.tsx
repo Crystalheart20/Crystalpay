@@ -102,16 +102,36 @@ export default function MemberPortal({
     ? members.filter(m => currentMonth.recipients.includes(m.id))
     : [];
 
-  // Countdown to deadline
-  const deadlineCountdown = (() => {
-    if (!currentMonth?.contributionDeadline) return null;
+  // Live countdown timer — updates every second
+  const [deadlineCountdown, setDeadlineCountdown] = useState<{
+    days: number; hours: number; minutes: number; seconds: number;
+    formatted: string; overdue: boolean; totalMs: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!currentMonth?.contributionDeadline) {
+      setDeadlineCountdown(null);
+      return;
+    }
     const deadline = new Date(currentMonth.contributionDeadline + "T23:59:59");
-    const now = new Date();
-    const diffMs = deadline.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
     const formatted = deadline.toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    return { diffDays, formatted, overdue: diffDays < 0 };
-  })();
+
+    const tick = () => {
+      const now = new Date();
+      const diffMs = deadline.getTime() - now.getTime();
+      const overdue = diffMs < 0;
+      const absDiff = Math.abs(diffMs);
+      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((absDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
+      setDeadlineCountdown({ days, hours, minutes, seconds, formatted, overdue, totalMs: diffMs });
+    };
+
+    tick(); // run immediately
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [currentMonth?.contributionDeadline]);
 
   const targetAmount = currentMonth?.targetAmountPerMember || 100000;
 
@@ -611,34 +631,68 @@ export default function MemberPortal({
         /* Step 2: Member dashboard portal! */
         <div className="space-y-6">
 
-          {/* Deadline Countdown Banner */}
+          {/* Live Deadline Countdown Banner */}
           {deadlineCountdown && (
-            <div className={`rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border ${
+            <div className={`rounded-2xl px-5 py-4 border ${
               deadlineCountdown.overdue
                 ? "bg-red-50 border-red-200"
-                : deadlineCountdown.diffDays <= 3
+                : deadlineCountdown.days === 0 && deadlineCountdown.hours < 6
+                ? "bg-rose-50 border-rose-200"
+                : deadlineCountdown.days <= 2
                 ? "bg-amber-50 border-amber-200"
                 : "bg-indigo-50 border-indigo-100"
             }`}>
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">{deadlineCountdown.overdue ? "🚨" : deadlineCountdown.diffDays <= 3 ? "⚠️" : "⏰"}</span>
-                <div>
-                  <p className={`text-sm font-black ${deadlineCountdown.overdue ? "text-red-700" : deadlineCountdown.diffDays <= 3 ? "text-amber-700" : "text-indigo-700"}`}>
-                    {deadlineCountdown.overdue
-                      ? `Payment Deadline Passed ${Math.abs(deadlineCountdown.diffDays)} day(s) ago!`
-                      : deadlineCountdown.diffDays === 0
-                      ? "Payment Due TODAY!"
-                      : `${deadlineCountdown.diffDays} day${deadlineCountdown.diffDays === 1 ? "" : "s"} left to pay`}
-                  </p>
-                  <p className={`text-xs mt-0.5 ${deadlineCountdown.overdue ? "text-red-500" : "text-slate-500"}`}>
-                    Deadline: {deadlineCountdown.formatted} · ₦{currentMonth?.targetAmountPerMember?.toLocaleString()} per member
+              {/* Top row — label + deadline date */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">
+                    {deadlineCountdown.overdue ? "🚨" : deadlineCountdown.days === 0 ? "🔥" : deadlineCountdown.days <= 2 ? "⚠️" : "⏰"}
+                  </span>
+                  <p className={`text-sm font-black ${
+                    deadlineCountdown.overdue ? "text-red-700"
+                    : deadlineCountdown.days === 0 ? "text-rose-700"
+                    : deadlineCountdown.days <= 2 ? "text-amber-700"
+                    : "text-indigo-700"
+                  }`}>
+                    {deadlineCountdown.overdue ? "Payment Deadline Has Passed!" : "Payment Deadline Countdown"}
                   </p>
                 </div>
+                <span className="text-xs text-slate-500 font-medium">{deadlineCountdown.formatted}</span>
               </div>
-              {!deadlineCountdown.overdue && (
-                <div className={`text-3xl font-black tabular-nums ${deadlineCountdown.diffDays <= 3 ? "text-amber-600" : "text-indigo-600"}`}>
-                  {deadlineCountdown.diffDays}d
+
+              {/* Timer blocks */}
+              {!deadlineCountdown.overdue ? (
+                <div className="flex items-center gap-2">
+                  {[
+                    { label: "Days", value: deadlineCountdown.days },
+                    { label: "Hours", value: deadlineCountdown.hours },
+                    { label: "Mins", value: deadlineCountdown.minutes },
+                    { label: "Secs", value: deadlineCountdown.seconds },
+                  ].map(({ label, value }, i) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <div className={`flex flex-col items-center justify-center rounded-xl px-3 py-2 min-w-[52px] ${
+                        deadlineCountdown.days === 0 && deadlineCountdown.hours < 6
+                          ? "bg-rose-600 text-white"
+                          : deadlineCountdown.days <= 2
+                          ? "bg-amber-500 text-white"
+                          : "bg-indigo-600 text-white"
+                      }`}>
+                        <span className="text-xl font-black tabular-nums leading-none">
+                          {String(value).padStart(2, "0")}
+                        </span>
+                        <span className="text-[9px] font-bold opacity-80 mt-0.5">{label}</span>
+                      </div>
+                      {i < 3 && <span className={`text-xl font-black ${deadlineCountdown.days <= 2 ? "text-amber-500" : "text-indigo-400"}`}>:</span>}
+                    </div>
+                  ))}
+                  <div className="ml-2 text-xs text-slate-500">
+                    <p className="font-semibold">₦{currentMonth?.targetAmountPerMember?.toLocaleString()} due</p>
+                  </div>
                 </div>
+              ) : (
+                <p className="text-xs text-red-500 font-semibold">
+                  Deadline was {deadlineCountdown.formatted} · Contact your group admin. ₦{currentMonth?.targetAmountPerMember?.toLocaleString()} still outstanding.
+                </p>
               )}
             </div>
           )}
