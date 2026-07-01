@@ -46,6 +46,9 @@ export default function MemberPortal({
   onLoginChange
 }: MemberPortalProps) {
   // Authentication & Session state
+  const [selectedMemberIdForPin, setSelectedMemberIdForPin] = useState<string>("");
+  const [pinInput, setPinInput] = useState<string>("");
+  const [pinError, setPinError] = useState<string>("");
   const [loggedInMemberId, setLoggedInMemberId] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
     const urlMemberId = params.get("memberId");
@@ -193,6 +196,42 @@ export default function MemberPortal({
   // Check if payout is already confirmed by this recipient
   const isPayoutConfirmedByThisRecipient = currentMonth?.payoutConfirmedByRecipients?.includes(loggedInMemberId) || false;
 
+  const handleSelectMember = (memberId: string) => {
+    if (!memberId) return;
+    setSelectedMemberIdForPin(memberId);
+    setPinInput("");
+    setPinError("");
+  };
+
+  const handlePinSubmit = () => {
+    const member = members.find(m => m.id === selectedMemberIdForPin);
+    if (!member) return;
+
+    // If no PIN set yet, block login and show contact admin message
+    if (!member.pin) {
+      setPinError("No PIN set for your account. Please contact your group admin.");
+      return;
+    }
+
+    if (pinInput !== member.pin) {
+      setPinError("Incorrect PIN. Please contact your admin if you've forgotten it.");
+      setPinInput("");
+      return;
+    }
+
+    // PIN correct — proceed with login
+    setLoggedInMemberId(selectedMemberIdForPin);
+    setSelectedMemberIdForPin("");
+    setPinInput("");
+    setPinError("");
+    localStorage.setItem("ajo_member_session", selectedMemberIdForPin);
+    resetUploadState();
+
+    if (member.groupId && onLoginChange) {
+      onLoginChange(member.groupId);
+    }
+  };
+
   const handleLogin = (memberId: string) => {
     if (!memberId) return;
     setLoggedInMemberId(memberId);
@@ -207,6 +246,9 @@ export default function MemberPortal({
 
   const handleLogout = () => {
     setLoggedInMemberId("");
+    setSelectedMemberIdForPin("");
+    setPinInput("");
+    setPinError("");
     localStorage.removeItem("ajo_member_session");
     resetUploadState();
   };
@@ -527,16 +569,16 @@ export default function MemberPortal({
             {/* Login View */}
             {!isRegisterMode ? (
               <div className="space-y-4">
+                {/* Step 1 — Select member */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase">Select Your Member Account</label>
-                  <p className="text-[10px] text-slate-400">Choose your name from the certified Ajo register roster to enter your dashboard.</p>
-                  
+                  <p className="text-[10px] text-slate-400">Choose your name then enter your 4-digit PIN to access your dashboard.</p>
                   <select
-                    onChange={(e) => handleLogin(e.target.value)}
-                    value=""
+                    onChange={(e) => handleSelectMember(e.target.value)}
+                    value={selectedMemberIdForPin}
                     className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-1"
                   >
-                    <option value="">-- Choose Profile to Log In --</option>
+                    <option value="">-- Choose Your Name --</option>
                     {members.map(m => (
                       <option key={m.id} value={m.id}>
                         👥 {m.name} ({m.bankName})
@@ -544,6 +586,48 @@ export default function MemberPortal({
                     ))}
                   </select>
                 </div>
+
+                {/* Step 2 — PIN entry (shows after member selected) */}
+                {selectedMemberIdForPin && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Enter Your 4-Digit PIN</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        maxLength={4}
+                        inputMode="numeric"
+                        placeholder="••••"
+                        value={pinInput}
+                        onChange={(e) => {
+                          setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4));
+                          setPinError("");
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+                        className="flex-1 text-center text-xl font-black tracking-[0.5em] px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handlePinSubmit}
+                        disabled={pinInput.length !== 4}
+                        className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition text-sm"
+                      >
+                        Login →
+                      </button>
+                    </div>
+                    {pinError && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700 font-semibold flex items-start gap-2">
+                        <span>🔒</span>
+                        <span>{pinError}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => { setSelectedMemberIdForPin(""); setPinInput(""); setPinError(""); }}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 underline"
+                    >
+                      ← Choose a different name
+                    </button>
+                  </div>
+                )}
 
                 <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-400 space-y-1">
                   <h4 className="font-bold text-slate-500 text-[10px] uppercase">Portal Feature Capabilities:</h4>

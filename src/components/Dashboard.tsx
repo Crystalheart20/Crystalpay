@@ -12,6 +12,7 @@ interface DashboardProps {
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
   onSetDeadline: (deadlineDate: string) => void;
   currentMonthDeadline?: string;
+  onSetMemberPin: (memberId: string, pin: string) => void;
   onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
   onCloseRound: () => void;
   onResetToPristine?: () => void;
@@ -28,6 +29,7 @@ export default function Dashboard({
   onConfigureMonth,
   onSetDeadline,
   currentMonthDeadline,
+  onSetMemberPin,
   onManualPayment,
   onCloseRound,
   onResetToPristine,
@@ -44,6 +46,8 @@ export default function Dashboard({
   // Month Configuration State
   const [deadlineInput, setDeadlineInput] = useState<string>("");
   const [deadlineSaved, setDeadlineSaved] = useState(false);
+  const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
+  const [pinSaved, setPinSaved] = useState<Record<string, boolean>>({});
   const [amountInput, setAmountInput] = useState(100000);
   const [spotsInput, setSpotsInput] = useState<1 | 2>(1);
   const [currencyInput, setCurrencyInput] = useState("NGN");
@@ -512,6 +516,40 @@ export default function Dashboard({
                             <Copy className="h-3.5 w-3.5" />
                           )}
                         </button>
+                        {/* PIN setter */}
+                        <div className="inline-flex items-center gap-1 align-middle mr-1">
+                          <input
+                            type="text"
+                            maxLength={4}
+                            placeholder={m.pin ? "••••" : "PIN"}
+                            value={pinInputs[m.id] || ""}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                              setPinInputs(prev => ({ ...prev, [m.id]: val }));
+                            }}
+                            className="w-12 text-center text-xs font-mono border border-slate-200 rounded-lg py-0.5 px-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-slate-50"
+                            title={m.pin ? "PIN set — enter new PIN to reset" : "Set 4-digit PIN for this member"}
+                          />
+                          <button
+                            onClick={() => {
+                              const pin = pinInputs[m.id];
+                              if (!pin || pin.length !== 4) return;
+                              onSetMemberPin(m.id, pin);
+                              setPinInputs(prev => ({ ...prev, [m.id]: "" }));
+                              setPinSaved(prev => ({ ...prev, [m.id]: true }));
+                              setTimeout(() => setPinSaved(prev => ({ ...prev, [m.id]: false })), 2000);
+                            }}
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition ${
+                              pinSaved[m.id] ? "bg-emerald-500 text-white" : "bg-indigo-500 hover:bg-indigo-600 text-white"
+                            }`}
+                            title="Save PIN"
+                          >
+                            {pinSaved[m.id] ? "✓" : m.pin ? "Reset" : "Set"}
+                          </button>
+                          {m.pin && (
+                            <span className="text-[9px] text-emerald-600 font-bold">🔒</span>
+                          )}
+                        </div>
                         <button
                           onClick={() => onRemoveMember(m.id)}
                           className="p-1 text-slate-400 hover:text-rose-600 transition inline-block align-middle"

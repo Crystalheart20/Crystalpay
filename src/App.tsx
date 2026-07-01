@@ -391,6 +391,19 @@ export default function App() {
     }
   };
 
+  // Action: Set or reset a member's PIN (admin only)
+  const handleSetMemberPin = async (memberId: string, pin: string) => {
+    const member = allMembers.find(m => m.id === memberId);
+    if (!member) return;
+    const updated = { ...member, pin };
+    setAllMembers(prev => prev.map(m => m.id === memberId ? { ...m, pin } : m));
+    try {
+      await setDoc(doc(db, "members", memberId), updated);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Action: Set contribution deadline for current month
   const handleSetDeadline = async (deadlineDate: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
@@ -909,6 +922,7 @@ export default function App() {
               onResetBallot={handleResetBallot}
               onSetDeadline={handleSetDeadline}
               currentMonthDeadline={currentMonth?.contributionDeadline}
+              onSetMemberPin={handleSetMemberPin}
             />
           )}
 
