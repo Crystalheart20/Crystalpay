@@ -655,8 +655,19 @@ export default function App() {
       console.error(e);
     }
 
-    const nextMonthId = "2026-07";
-    const nextMonthName = "July 2026";
+    const [yearStr, monthStr] = currentMonthId.split("-");
+    let year = parseInt(yearStr, 10);
+    let month = parseInt(monthStr, 10); // 1-12
+
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+
+    const nextMonthId = `${year}-${String(month).padStart(2, "0")}`;
+    const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const nextMonthName = `${monthNames[month - 1]} ${year}`;
     
     const exists = months.some(m => m.id === nextMonthId);
     if (!exists) {
