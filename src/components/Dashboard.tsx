@@ -195,7 +195,11 @@ export default function Dashboard({
             </div>
           </div>
           <button
-            onClick={onCloseRound}
+            onClick={() => {
+              if (window.confirm("Are you sure you want to end this round? This will mark it as completed and start a new round. This cannot be easily undone.")) {
+                onCloseRound();
+              }
+            }}
             className="w-full md:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow shadow-emerald-600/20 flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
           >
             <Lock className="w-4 h-4" />
@@ -726,7 +730,11 @@ export default function Dashboard({
 
               {/* Close Round button */}
               <button
-                onClick={onCloseRound}
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to end this round? This will mark it as completed and start a new round. This cannot be easily undone.")) {
+                    onCloseRound();
+                  }
+                }}
                 disabled={currentMonth.status === "COMPLETED"}
                 className={`w-full py-3 mt-4 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition ${
                   currentMonth?.status === "COMPLETED" 
