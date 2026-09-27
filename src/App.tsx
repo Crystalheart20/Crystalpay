@@ -95,7 +95,7 @@ export default function App() {
     return [];
   });
 
-  const [currentMonthId, setCurrentMonthId] = useState<string>("2026-06");
+  const [currentMonthId, setCurrentMonthId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal" | "realestate">(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("role") === "member" || params.get("portal") === "true") {
