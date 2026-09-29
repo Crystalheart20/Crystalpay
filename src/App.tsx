@@ -9,6 +9,9 @@ import RealEstatePools from "./components/RealEstatePools";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
 import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
+import { auth } from "./firebase";
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import AdminLogin from "./components/AdminLogin";
 
 // Helper to recursively remove all undefined values from an object for Firestore compatibility
 function cleanData<T>(obj: T): T {
@@ -95,6 +98,8 @@ export default function App() {
     return [];
   });
 
+  const [adminUser, setAdminUser] = useState<FirebaseUser | null>(null);
+const [authLoading, setAuthLoading] = useState(true);
   const [currentMonthId, setCurrentMonthId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal" | "realestate">(() => {
     const params = new URLSearchParams(window.location.search);
@@ -112,6 +117,14 @@ export default function App() {
 
   const members = allMembers.filter(m => (m.groupId || "default") === selectedGroupId);
   const months = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
+
+    useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAdminUser(user);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Subscribe to Ajo groups in central Firestore
   useEffect(() => {
@@ -700,6 +713,19 @@ export default function App() {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  if (!isMemberOnlyUrl && authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-slate-400">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!isMemberOnlyUrl && !adminUser) {
+    return <AdminLogin />;
+  }
+  
+  
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       
