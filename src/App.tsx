@@ -120,7 +120,7 @@ const [authLoading, setAuthLoading] = useState(true);
 
     useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAdminUser(user);
+      setAdminUser(user && !user.isAnonymous ? user : null);
       setAuthLoading(false);
     });
     return () => unsubscribe();

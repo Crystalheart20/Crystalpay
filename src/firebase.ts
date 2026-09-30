@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, signInAnonymously } from "firebase/auth";
 import firebaseConfig from "../firebase-applet-config.json";
 
 // Initialize Firebase
@@ -9,6 +9,8 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firestore with the specific database id
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+
+signInAnonymously(auth).catch((err) => console.error("Anonymous sign-in failed:", err));
 
 export enum OperationType {
   CREATE = "create",
