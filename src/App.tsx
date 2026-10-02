@@ -10,7 +10,7 @@ import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, C
 import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./firebase";
-import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { onAuthStateChanged, User as FirebaseUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import AdminLogin from "./components/AdminLogin";
 
 // Helper to recursively remove all undefined values from an object for Firestore compatibility
@@ -300,7 +300,38 @@ const [authLoading, setAuthLoading] = useState(true);
       setAllMembers(prev => [...prev, fresh]);
     }
   };
-
+  // Self-registration for a brand-new member: creates their member record AND a real login account together
+  const handleRegisterNewMember = async (
+    newMem: Omit<Member, "id" | "collectedMonths" | "isActive" | "email" | "authUid">,
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const freshId = "mem-" + Date.now();
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const fresh: Member & { groupId: string } = {
+        ...newMem,
+        id: freshId,
+        groupId: selectedGroupId,
+        collectedMonths: [],
+        isActive: true,
+        email: email.trim(),
+        authUid: cred.user.uid,
+      };
+      await setDoc(doc(db, "members", freshId), fresh);
+      setAllMembers(prev => [...prev, fresh]);
+      return { success: true };
+    } catch (e: any) {
+      console.error(e);
+      if (e?.code === "auth/email-already-in-use") {
+        return { success: false, error: "That email is already registered." };
+      }
+      if (e?.code === "auth/weak-password") {
+        return { success: false, error: "Password should be at least 6 characters." };
+      }
+      return { success: false, error: "Registration failed. Please try again." };
+    }
+  };
   const handleRemoveMember = async (id: string) => {
     try {
       await deleteDoc(doc(db, "members", id));
@@ -416,7 +447,46 @@ const [authLoading, setAuthLoading] = useState(true);
       console.error(e);
     }
   };
+  // Member self-registration: creates a real Firebase account and links it to their existing member record
+  const handleMemberRegister = async (memberId: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const member = allMembers.find(m => m.id === memberId);
+    if (!member) return { success: false, error: "Member not found." };
 
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const updated = { ...member, email: email.trim(), authUid: cred.user.uid };
+      setAllMembers(prev => prev.map(m => m.id === memberId ? updated : m));
+      await setDoc(doc(db, "members", memberId), updated);
+      return { success: true };
+    } catch (e: any) {
+      console.error(e);
+      if (e?.code === "auth/email-already-in-use") {
+        return { success: false, error: "That email is already registered." };
+      }
+      if (e?.code === "auth/weak-password") {
+        return { success: false, error: "Password should be at least 6 characters." };
+      }
+      return { success: false, error: "Registration failed. Please try again." };
+    }
+  };
+
+  // Member login: signs in with Firebase Auth, then finds their linked member record
+  const handleMemberLogin = async (email: string, password: string): Promise<{ success: boolean; member?: Member; error?: string }> => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const member = allMembers.find(m => m.authUid === cred.user.uid);
+      if (!member) {
+        return { success: false, error: "No member profile linked to this account." };
+      }
+      return { success: true, member };
+    } catch (e: any) {
+      console.error(e);
+      if (e?.code === "auth/invalid-credential" || e?.code === "auth/wrong-password" || e?.code === "auth/user-not-found") {
+        return { success: false, error: "Incorrect email or password." };
+      }
+      return { success: false, error: "Login failed. Please try again." };
+    }
+  };
   // Action: Set contribution deadline for current month
   const handleSetDeadline = async (deadlineDate: string) => {
     const targetMonth = months.find(m => m.id === currentMonthId);
@@ -933,6 +1003,9 @@ const [authLoading, setAuthLoading] = useState(true);
                 setSelectedGroupId(groupId);
                 localStorage.setItem("selected_ajo_group_id", groupId);
               }}
+              onMemberRegister={handleMemberRegister}
+              onMemberLogin={handleMemberLogin}
+              onRegisterNewMember={handleRegisterNewMember}
             />
           )}
 

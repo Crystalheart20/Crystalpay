@@ -32,6 +32,13 @@ interface MemberPortalProps {
   onConfirmPayoutReceipt: (memberId: string, monthId: string) => void;
   onConfirmPaymentCredit?: (memberId: string, recipientId: string, transactionRef: string) => Promise<void>;
   onLoginChange?: (groupId: string) => void;
+    onMemberRegister?: (memberId: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  onMemberLogin?: (email: string, password: string) => Promise<{ success: boolean; member?: Member; error?: string }>;
+  onRegisterNewMember?: (
+    newMem: Omit<Member, "id" | "collectedMonths" | "isActive" | "email" | "authUid">,
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 export default function MemberPortal({
@@ -43,7 +50,10 @@ export default function MemberPortal({
   onPaymentApproved,
   onConfirmPayoutReceipt,
   onConfirmPaymentCredit,
-  onLoginChange
+  onLoginChange,
+  onMemberRegister,
+  onMemberLogin,
+  onRegisterNewMember
 }: MemberPortalProps) {
   // Authentication & Session state
   const [selectedMemberIdForPin, setSelectedMemberIdForPin] = useState<string>("");
@@ -59,6 +69,19 @@ export default function MemberPortal({
     return localStorage.getItem("ajo_member_session") || "";
   });
 
+  // Email/password login state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [showPinFallback, setShowPinFallback] = useState(false);
+
+  // "Set up email login" prompt — shown once after a successful PIN login, if member has no email yet
+  const [showSetupEmailPrompt, setShowSetupEmailPrompt] = useState(false);
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupPassword, setSetupPassword] = useState("");
+  const [setupError, setSetupError] = useState("");
+  const [setupLoading, setSetupLoading] = useState(false);
   // Sync session once async members load from Firebase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -220,6 +243,9 @@ export default function MemberPortal({
     }
 
     // PIN correct — proceed with login
+    if (!member.email) {
+      setShowSetupEmailPrompt(true);
+    }
     setLoggedInMemberId(selectedMemberIdForPin);
     setSelectedMemberIdForPin("");
     setPinInput("");
@@ -229,6 +255,39 @@ export default function MemberPortal({
 
     if (member.groupId && onLoginChange) {
       onLoginChange(member.groupId);
+    }
+  };
+  
+  const handleEmailLogin = async () => {
+    if (!onMemberLogin) return;
+    setLoginError("");
+    setLoginLoading(true);
+    const result = await onMemberLogin(loginEmail, loginPassword);
+    setLoginLoading(false);
+    if (result.success && result.member) {
+      setLoggedInMemberId(result.member.id);
+      localStorage.setItem("ajo_member_session", result.member.id);
+      resetUploadState();
+      if (result.member.groupId && onLoginChange) {
+        onLoginChange(result.member.groupId);
+      }
+    } else {
+      setLoginError(result.error || "Login failed.");
+    }
+  };
+
+  const handleSetupEmail = async () => {
+    if (!onMemberRegister || !loggedInMemberId) return;
+    setSetupError("");
+    setSetupLoading(true);
+    const result = await onMemberRegister(loggedInMemberId, setupEmail, setupPassword);
+    setSetupLoading(false);
+    if (result.success) {
+      setShowSetupEmailPrompt(false);
+      setSetupEmail("");
+      setSetupPassword("");
+    } else {
+      setSetupError(result.error || "Setup failed.");
     }
   };
 
@@ -569,63 +628,155 @@ export default function MemberPortal({
             {/* Login View */}
             {!isRegisterMode ? (
               <div className="space-y-4">
-                {/* Step 1 — Select member */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Select Your Member Account</label>
-                  <p className="text-[10px] text-slate-400">Choose your name then enter your 4-digit PIN to access your dashboard.</p>
-                  <select
-                    onChange={(e) => handleSelectMember(e.target.value)}
-                    value={selectedMemberIdForPin}
-                    className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-1"
-                  >
-                    <option value="">-- Choose Your Name --</option>
-                    {members.map(m => (
-                      <option key={m.id} value={m.id}>
-                        👥 {m.name} ({m.bankName})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Step 2 — PIN entry (shows after member selected) */}
-                {selectedMemberIdForPin && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Enter Your 4-Digit PIN</label>
-                    <div className="flex gap-2">
+                {!showPinFallback ? (
+                  <>
+                    {/* Email/Password Login */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
                       <input
-                        type="password"
-                        maxLength={4}
-                        inputMode="numeric"
-                        placeholder="••••"
-                        value={pinInput}
-                        onChange={(e) => {
-                          setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4));
-                          setPinError("");
-                        }}
-                        onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
-                        className="flex-1 text-center text-xl font-black tracking-[0.5em] px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        type="email"
+                        value={loginEmail}
+                        onChange={(e) => { setLoginEmail(e.target.value); setLoginError(""); }}
+                        placeholder="you@example.com"
+                        className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         autoFocus
                       />
-                      <button
-                        onClick={handlePinSubmit}
-                        disabled={pinInput.length !== 4}
-                        className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition text-sm"
-                      >
-                        Login →
-                      </button>
                     </div>
-                    {pinError && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
+                      <input
+                        type="password"
+                        value={loginPassword}
+                        onChange={(e) => { setLoginPassword(e.target.value); setLoginError(""); }}
+                        onKeyDown={(e) => e.key === "Enter" && handleEmailLogin()}
+                        placeholder="••••••••"
+                        className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    {loginError && (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700 font-semibold flex items-start gap-2">
                         <span>🔒</span>
-                        <span>{pinError}</span>
+                        <span>{loginError}</span>
                       </div>
                     )}
                     <button
-                      onClick={() => { setSelectedMemberIdForPin(""); setPinInput(""); setPinError(""); }}
+                      onClick={handleEmailLogin}
+                      disabled={loginLoading || !loginEmail || !loginPassword}
+                      className="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition text-sm"
+                    >
+                      {loginLoading ? "Signing in…" : "Login →"}
+                    </button>
+                    <button
+                      onClick={() => setShowPinFallback(true)}
                       className="text-[10px] text-slate-400 hover:text-slate-600 underline"
                     >
-                      ← Choose a different name
+                      First time here? Log in with your PIN instead
                     </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Step 1 — Select member */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Select Your Member Account</label>
+                      <p className="text-[10px] text-slate-400">Choose your name then enter your 4-digit PIN to access your dashboard.</p>
+                      <select
+                        onChange={(e) => handleSelectMember(e.target.value)}
+                        value={selectedMemberIdForPin}
+                        className="w-full text-sm px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-1"
+                      >
+                        <option value="">-- Choose Your Name --</option>
+                        {members.map(m => (
+                          <option key={m.id} value={m.id}>
+                            👥 {m.name} ({m.bankName})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Step 2 — PIN entry (shows after member selected) */}
+                    {selectedMemberIdForPin && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase">Enter Your 4-Digit PIN</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            maxLength={4}
+                            inputMode="numeric"
+                            placeholder="••••"
+                            value={pinInput}
+                            onChange={(e) => {
+                              setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4));
+                              setPinError("");
+                            }}
+                            onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+                            className="flex-1 text-center text-xl font-black tracking-[0.5em] px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            autoFocus
+                          />
+                          <button
+                            onClick={handlePinSubmit}
+                            disabled={pinInput.length !== 4}
+                            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition text-sm"
+                          >
+                            Login →
+                          </button>
+                        </div>
+                        {pinError && (
+                          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700 font-semibold flex items-start gap-2">
+                            <span>🔒</span>
+                            <span>{pinError}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { setSelectedMemberIdForPin(""); setPinInput(""); setPinError(""); }}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 underline"
+                        >
+                          ← Choose a different name
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setShowPinFallback(false)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 underline"
+                    >
+                      ← Back to email login
+                    </button>
+                  </>
+                )}
+
+                {showSetupEmailPrompt && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-indigo-800">🔐 Set up email login for next time</p>
+                    <p className="text-[10px] text-indigo-600">You're logged in via PIN. Add an email + password now so you can log in faster next time.</p>
+                    <input
+                      type="email"
+                      value={setupEmail}
+                      onChange={(e) => setSetupEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-indigo-200"
+                    />
+                    <input
+                      type="password"
+                      value={setupPassword}
+                      onChange={(e) => setSetupPassword(e.target.value)}
+                      placeholder="Choose a password"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-indigo-200"
+                    />
+                    {setupError && <p className="text-[10px] text-red-600">{setupError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSetupEmail}
+                        disabled={setupLoading || !setupEmail || !setupPassword}
+                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg"
+                      >
+                        {setupLoading ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => setShowSetupEmailPrompt(false)}
+                        className="px-3 py-2 text-xs text-slate-400 hover:text-slate-600"
+                      >
+                        Skip
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -780,7 +931,43 @@ export default function MemberPortal({
               )}
             </div>
           )}
-
+          {showSetupEmailPrompt && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold text-indigo-800">🔐 Set up email login for next time</p>
+              <p className="text-[10px] text-indigo-600">You're logged in via PIN. Add an email + password now so you can log in faster next time.</p>
+              <input
+                type="email"
+                value={setupEmail}
+                onChange={(e) => setSetupEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full text-xs px-3 py-2 rounded-lg border border-indigo-200"
+              />
+              <input
+                type="password"
+                value={setupPassword}
+                onChange={(e) => setSetupPassword(e.target.value)}
+                placeholder="Choose a password"
+                className="w-full text-xs px-3 py-2 rounded-lg border border-indigo-200"
+              />
+              {setupError && <p className="text-[10px] text-red-600">{setupError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSetupEmail}
+                  disabled={setupLoading || !setupEmail || !setupPassword}
+                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg"
+                >
+                  {setupLoading ? "Saving…" : "Save"}
+                </button>
+                <button
+                  onClick={() => setShowSetupEmailPrompt(false)}
+                  className="px-3 py-2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  Skip
+                </button>
+              </div>
+            </div>
+          )}
+          
           {/* Dashboard Header Bar */}
           <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center gap-3">

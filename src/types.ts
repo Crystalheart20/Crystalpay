@@ -13,7 +13,9 @@ export interface Member {
   collectedMonths: string[]; // List of historical round IDs they have won/collected
   isActive: boolean;
   groupId?: string;
-  pin?: string; // 4-digit PIN set by admin, required for member portal login
+  pin?: string; // 4-digit PIN — legacy fallback during transition to email/password login
+  email?: string; // Set once member registers with email + password
+  authUid?: string; // Firebase Auth UID, set once member registers — links this record to their real login
 }
 
 export interface PaymentLog {
