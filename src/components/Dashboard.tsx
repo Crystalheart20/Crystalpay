@@ -9,6 +9,7 @@ interface DashboardProps {
   currency: string;
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
   onRemoveMember: (id: string) => void;
+  onToggleMemberActive?: (id: string) => void;
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
   onSetDeadline: (deadlineDate: string) => void;
   currentMonthDeadline?: string;
@@ -26,6 +27,7 @@ export default function Dashboard({
   currency,
   onAddMember,
   onRemoveMember,
+  onToggleMemberActive,
   onConfigureMonth,
   onSetDeadline,
   currentMonthDeadline,
@@ -454,6 +456,8 @@ export default function Dashboard({
                           <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium text-[10px]">
                             Won Round {m.collectedMonths[0]}
                           </span>
+                        ) : !m.isActive ? (
+                          <span className="text-amber-500 text-[10px] font-semibold">⏳ Pending approval</span>
                         ) : (
                           <span className="text-slate-400 text-[10px]">Eligible in pool</span>
                         )}
@@ -554,6 +558,19 @@ export default function Dashboard({
                             <span className="text-[9px] text-emerald-600 font-bold">🔒</span>
                           )}
                         </div>
+                            {onToggleMemberActive && (
+                          <button
+                            onClick={() => onToggleMemberActive(m.id)}
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 ${
+                              m.isActive
+                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            }`}
+                            title={m.isActive ? "Deactivate (exclude from ballot)" : "Activate (include in ballot)"}
+                          >
+                            {m.isActive ? "Active" : "Pending"}
+                          </button>
+                        )}
                         <button
                           onClick={() => onRemoveMember(m.id)}
                           className="p-1 text-slate-400 hover:text-rose-600 transition inline-block align-middle"

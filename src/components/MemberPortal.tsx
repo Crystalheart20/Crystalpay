@@ -37,12 +37,15 @@ interface MemberPortalProps {
   onRegisterNewMember?: (
     newMem: Omit<Member, "id" | "collectedMonths" | "isActive" | "email" | "authUid">,
     email: string,
-    password: string
+    password: string,
+    targetGroupId: string
   ) => Promise<{ success: boolean; error?: string }>;
+  groups?: { id: string; name: string }[];
 }
 
 export default function MemberPortal({
   members,
+  groups,
   months,
   currentMonthId,
   currency,
@@ -104,6 +107,10 @@ export default function MemberPortal({
   const [regBank, setRegBank] = useState("");
   const [regAccountNo, setRegAccountNo] = useState("");
   const [regAccountName, setRegAccountName] = useState("");
+  const [regGroupId, setRegGroupId] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regLoading, setRegLoading] = useState(false);
   const [regSuccessMsg, setRegSuccessMsg] = useState("");
 
   // Receipt Verifier State inside portal
@@ -312,31 +319,53 @@ export default function MemberPortal({
     resetUploadState();
   };
 
-  const handleRegisterSelf = (e: React.FormEvent) => {
+    const handleRegisterSelf = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName || !regBank || !regAccountNo) {
       setAuditError("Please fill out all required fields marked with *");
       return;
     }
+    if (!regEmail || !regPassword) {
+      setAuditError("Please enter an email and password to secure your account.");
+      return;
+    }
+    if (!regGroupId) {
+      setAuditError("Please select which group you're joining.");
+      return;
+    }
 
-    // Call registration prop
-    onAddMember({
-      name: regName,
-      phone: regPhone || "N/A",
-      bankName: regBank,
-      accountNo: regAccountNo,
-      accountName: regAccountName || regName
-    });
+    if (!onRegisterNewMember) return;
+    setRegLoading(true);
+    const result = await onRegisterNewMember(
+      {
+        name: regName,
+        phone: regPhone || "N/A",
+        bankName: regBank,
+        accountNo: regAccountNo,
+        accountName: regAccountName || regName
+      },
+      regEmail,
+      regPassword,
+      regGroupId
+    );
+    setRegLoading(false);
 
-    setRegSuccessMsg(`Congratulations ${regName}! You have registered successfully. You can now log in below.`);
-    
-    // Auto populate newly registered profile login matching by name or just resetting
+    if (!result.success) {
+      setAuditError(result.error || "Registration failed. Please try again.");
+      return;
+    }
+
+    setRegSuccessMsg(`Congratulations ${regName}! You have registered successfully. You can now log in below with your email and password.`);
+
+    // Reset form
     setRegName("");
     setRegPhone("");
     setRegBank("");
     setRegAccountNo("");
     setRegAccountName("");
-    
+    setRegEmail("");
+    setRegPassword("");
+
     setTimeout(() => {
       setIsRegisterMode(false);
       setRegSuccessMsg("");
@@ -839,7 +868,7 @@ export default function MemberPortal({
                   </div>
                 </div>
 
-                <div>
+                                <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Account Holder Name (If different)</label>
                   <input
                     type="text"
@@ -849,12 +878,51 @@ export default function MemberPortal({
                     className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
                   />
                 </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Which Group Are You Joining? *</label>
+                  <select
+                    required
+                    value={regGroupId}
+                    onChange={(e) => setRegGroupId(e.target.value)}
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none bg-white"
+                  >
+                    <option value="">-- Select a group --</option>
+                    {(groups || []).map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Email *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="you@example.com"
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Password *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Choose a password"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 mt-0.5 focus:outline-none"
+                    />
+                  </div>
+                </div>
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg transition"
+                  disabled={regLoading}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold text-xs rounded-lg transition"
                 >
-                  Register Profile and Save
+                  {regLoading ? "Registering…" : "Register Profile and Save"}
                 </button>
               </form>
             )}
@@ -967,7 +1035,7 @@ export default function MemberPortal({
               </div>
             </div>
           )}
-          
+
           {/* Dashboard Header Bar */}
           <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center gap-3">

@@ -120,7 +120,8 @@ const [authLoading, setAuthLoading] = useState(true);
 
     useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAdminUser(user && !user.isAnonymous ? user : null);
+    const ADMIN_EMAILS = ["hammed.olaoye2015@gmail.com"];
+setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || "") ? user : null);
       setAuthLoading(false);
     });
     return () => unsubscribe();
@@ -304,7 +305,8 @@ const [authLoading, setAuthLoading] = useState(true);
   const handleRegisterNewMember = async (
     newMem: Omit<Member, "id" | "collectedMonths" | "isActive" | "email" | "authUid">,
     email: string,
-    password: string
+    password: string,
+    targetGroupId: string
   ): Promise<{ success: boolean; error?: string }> => {
     const freshId = "mem-" + Date.now();
     try {
@@ -312,9 +314,9 @@ const [authLoading, setAuthLoading] = useState(true);
       const fresh: Member & { groupId: string } = {
         ...newMem,
         id: freshId,
-        groupId: selectedGroupId,
+        groupId: targetGroupId,
         collectedMonths: [],
-        isActive: true,
+        isActive: false,
         email: email.trim(),
         authUid: cred.user.uid,
       };
@@ -344,6 +346,18 @@ const [authLoading, setAuthLoading] = useState(true);
       for (const m of updatedMonths) {
         await setDoc(doc(db, "months", `${selectedGroupId}_${m.id}`), m);
       }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleMemberActive = async (id: string) => {
+    const member = allMembers.find(m => m.id === id);
+    if (!member) return;
+    const updated = { ...member, isActive: !member.isActive };
+    setAllMembers(prev => prev.map(m => m.id === id ? updated : m));
+    try {
+      await setDoc(doc(db, "members", id), updated);
     } catch (e) {
       console.error(e);
     }
@@ -992,6 +1006,7 @@ const [authLoading, setAuthLoading] = useState(true);
           {activeTab === "portal" && (
             <MemberPortal
               members={allMembers}
+              groups={groups}
               months={allMonths}
               currentMonthId={currentMonthId}
               currency="₦"
@@ -1025,6 +1040,7 @@ const [authLoading, setAuthLoading] = useState(true);
               currency="₦"
               onAddMember={handleAddMember}
               onRemoveMember={handleRemoveMember}
+              onToggleMemberActive={handleToggleMemberActive}
               onConfigureMonth={handleConfigureMonth}
               onManualPayment={handleManualPayment}
               onCloseRound={handleCloseRound}

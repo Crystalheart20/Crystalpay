@@ -14,7 +14,14 @@ export default function AdminLogin() {
     setError(null);
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const ADMIN_EMAILS = ["hammed.olaoye2015@gmail.com"];
+      if (!ADMIN_EMAILS.includes(cred.user.email || "")) {
+        await auth.signOut();
+        setError("This account doesn't have admin access.");
+        setLoading(false);
+        return;
+      }
       // onAuthStateChanged in App.tsx will pick this up automatically
     } catch (err: any) {
       const code = err?.code || "";
