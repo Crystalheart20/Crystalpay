@@ -21,7 +21,8 @@ import {
   CheckSquare,
   Inbox
 } from "lucide-react";
-
+import ReliefFund from "./ReliefFund";
+const SHOW_RELIEF_FUND = false; // set to true when Relief Fund is finished
 interface MemberPortalProps {
   members: Member[];
   months: ContributionMonth[];
@@ -1063,6 +1064,15 @@ export default function MemberPortal({
               <span>Sign Out Portal</span>
             </button>
           </div>
+
+          {SHOW_RELIEF_FUND && (
+            <ReliefFund
+              groupId={loggedInMember.groupId || "default"}
+              memberId={loggedInMember.id}
+              memberName={loggedInMember.name}
+              isMemberActive={loggedInMember.isActive}
+            />
+          )}
 
           {/* Banner: List of All Active Rotational Winners */}
           {activeRecipientsList.length > 0 ? (
