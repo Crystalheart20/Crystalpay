@@ -83,17 +83,16 @@ app.post("/api/verify-receipt", async (req, res) => {
                           apiKey !== "MOCK_KEY_FOR_BUILD";
 
     const getSimulatedResponse = (infoPrefix: string = "") => {
-      const matched = Math.random() > 0.1;
       return {
         isReceipt: true,
-        senderName: memberName || "Simulated Sender",
-        amount: expectedAmount || 10000,
+        senderName: memberName || "Unknown",
+        amount: 0,
         currency: "NGN",
         date: new Date().toISOString().split('T')[0],
-        transactionReference: "TXN-" + Math.floor(Math.random() * 10000000),
-        confidenceScore: 0.95,
-        explanation: `${infoPrefix}Verified simulated receipt successfully. (Running in demo mode - provide GEMINI_API_KEY for real OCR analysis)`,
-        status: matched ? "APPROVED" : "FLAGGED"
+        transactionReference: "MANUAL-REVIEW",
+        confidenceScore: 0,
+        explanation: `${infoPrefix}The automatic receipt check is unavailable, so this payment was NOT verified. The admin must confirm it against the bank credit.`,
+        status: "FLAGGED"
       };
     };
 
@@ -218,16 +217,16 @@ Analyze the proof and extract:
   } catch (routeErr: any) {
     console.error("Critical error in verify-receipt API route wrapper:", routeErr);
     // Even if body or route itself errored, send a beautiful 200 simulation to keep user experience totally smooth
-    return res.json({
+        return res.json({
       isReceipt: true,
-      senderName: "Simulated Sender",
-      amount: 10000,
+      senderName: "Unknown",
+      amount: 0,
       currency: "NGN",
       date: new Date().toISOString().split('T')[0],
-      transactionReference: "TXN-" + Math.floor(Math.random() * 10000000),
-      confidenceScore: 0.95,
-      explanation: "[AI Engine Offline - Emergency Fallback Triggered] Verified simulated receipt.",
-      status: "APPROVED"
+      transactionReference: "MANUAL-REVIEW",
+      confidenceScore: 0,
+      explanation: "[AI Engine Offline - Emergency Fallback Triggered] The receipt check failed, so this payment was NOT verified. The admin must confirm it against the bank credit.",
+      status: "FLAGGED"
     });
   }
 });
