@@ -87,6 +87,10 @@ export interface ReliefBallot {
 const MIN_MEMBERSHIP_MONTHS = 3; // must have been in the fund this long before requesting
 const MAX_REQUEST_MULTIPLE = 2.5; // max request = current balance x this
 const VOTING_HOURS = 24; // how long members have to vote
+// Self-service Add / Withdraw is OFF: nothing here moves real money, so a member could type any
+// amount and credit themselves. Keep this false until contributions are confirmed by the admin
+// or by a verified payment.
+const ALLOW_SELF_SERVICE_MONEY = false;
 const REPAYMENT_MONTHS = 6; // approved payouts are repaid in this many monthly instalments
 
 // ============================================================
@@ -689,12 +693,14 @@ export default function ReliefFund({
         </p>
       )}
 
-      {hasPendingOwnRequest && (
+      {ALLOW_SELF_SERVICE_MONEY && hasPendingOwnRequest && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
           Withdrawals are paused while your relief request is being voted on.
         </p>
       )}
 
+      {ALLOW_SELF_SERVICE_MONEY ? (
+        <>
       {/* Contribute */}
       <div className="mb-4">
         <label className="text-xs font-semibold text-slate-600 mb-1 block">
@@ -741,6 +747,13 @@ export default function ReliefFund({
           </button>
         </div>
       </div>
+        </>
+      ) : (
+        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 mb-4">
+          Contributions and withdrawals are recorded by the group admin once the payment has been
+          confirmed. Adding and withdrawing yourself is switched off for now.
+        </p>
+      )}
 
       {/* Requests awaiting this member's vote */}
       <div className="mb-4 border-t border-slate-100 pt-4">
@@ -832,7 +845,7 @@ export default function ReliefFund({
           </p>
         ) : reliefMember.balance <= 0 ? (
           <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-            Contribute to the fund first. You can request up to 2.5× your balance.
+            Your balance is zero. Once the admin has recorded a contribution from you, you can request up to 2.5× your balance.
           </p>
         ) : hasPendingOwnRequest ? (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
