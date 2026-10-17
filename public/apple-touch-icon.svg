@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="CoVest app icon">
+  <rect width="180" height="180" rx="42" fill="#4F46E5"/>
+  <path d="M90 28 L144 58 V102 C144 132 90 156 90 156 C90 156 36 132 36 102 V58 Z" fill="white" fill-opacity="0.13" stroke="white" stroke-opacity="0.2" stroke-width="5"/>
+  <g fill="white">
+    <path d="M90 44 L128 82 L90 66 Z" opacity="0.95"/>
+    <path d="M90 44 L52 82 L90 66 Z" opacity="0.72"/>
+    <path d="M52 82 L90 142 L66 82 Z" opacity="0.88"/>
+    <path d="M128 82 L90 142 L114 82 Z" opacity="0.62"/>
+    <path d="M66 82 L114 82 L90 142 Z" opacity="1"/>
+    <path d="M90 66 L128 82 L114 82 Z" opacity="0.78"/>
+    <path d="M90 66 L52 82 L66 82 Z" opacity="0.9"/>
+  </g>
+  <g fill="white" opacity="0.95">
+    <circle cx="116" cy="62" r="5"/>
+    <path d="M116 51 v10 M106 62 h20" stroke="white" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+  </g>
+</svg>

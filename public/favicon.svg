@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="CoVest favicon">
+  <!-- Shield background -->
+  <rect width="32" height="32" rx="7" fill="#4F46E5"/>
+  <!-- Shield outline -->
+  <path d="M16 5.5 L25 10.2 V17.8 C25 22.6 16 27.2 16 27.2 C16 27.2 7 22.6 7 17.8 V10.2 Z" fill="white" fill-opacity="0.14" stroke="white" stroke-opacity="0.22" stroke-width="0.9"/>
+  <!-- Crystal / gem -->
+  <g fill="white">
+    <!-- top facet -->
+    <path d="M16 8.2 L21.2 14.6 L16 12.1 Z" opacity="0.95"/>
+    <path d="M16 8.2 L10.8 14.6 L16 12.1 Z" opacity="0.72"/>
+    <!-- body facets -->
+    <path d="M10.8 14.6 L16 23.8 L12.2 14.6 Z" opacity="0.88"/>
+    <path d="M21.2 14.6 L16 23.8 L19.8 14.6 Z" opacity="0.62"/>
+    <path d="M12.2 14.6 L19.8 14.6 L16 23.8 Z" opacity="1"/>
+    <path d="M16 12.1 L21.2 14.6 L19.8 14.6 Z" opacity="0.78"/>
+    <path d="M16 12.1 L10.8 14.6 L12.2 14.6 Z" opacity="0.9"/>
+  </g>
+  <!-- sparkle -->
+  <g fill="white" opacity="0.95">
+    <circle cx="20.6" cy="11.2" r="0.9"/>
+    <path d="M20.6 9.6 v1.2 M19.4 11.2 h2.4" stroke="white" stroke-width="0.55" stroke-linecap="round" opacity="0.9"/>
+  </g>
+</svg>

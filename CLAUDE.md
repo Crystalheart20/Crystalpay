@@ -23,9 +23,11 @@ Real members and real money are involved: be careful, and never delete data in t
 - Local: `npm run dev` then open http://localhost:3000. It uses the real Firestore data.
 - Build check: `npm run build`.
 - Live site: Google Cloud Run service `ajo-app`, region `europe-west1`, https://ajo-app-987900108534.europe-west1.run.app
+- Custom domain: https://covest.crystalpayng.com → same Cloud Run service (beta domain mapping, CNAME covest → ghs.googlehosted.com., Vercel DNS, free HTTPS). Apex crystalpayng.com reserved for future landing page.
 - Deploy (run from this folder): `gcloud run deploy ajo-app --source . --region europe-west1 --allow-unauthenticated --port 3000 --min-instances 0 --max-instances 2 --env-vars-file env.yaml`
 - `git push` only backs up to GitHub (Crystalheart20/Crystalpay, branch main). It does NOT update the live site.
 - `Dockerfile` builds the app. `env.yaml` holds GEMINI_API_KEY; it is in `.gitignore` and `.gcloudignore`.
+- Branding: public/logo.svg (header + OG image, "CoVest by CrystalPay" shield+crystal), public/favicon.svg (tab/address bar), public/apple-touch-icon.svg (iOS home screen). Wired in index.html and App.tsx header + AdminLogin.
 - The old Railway project is paused and can be deleted once everything is confirmed.
 
 ## How things work

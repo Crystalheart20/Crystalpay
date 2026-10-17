@@ -876,12 +876,11 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-extrabold shadow-md shadow-indigo-600/10 float-left">
-              CV
-            </div>
+            <img src="/logo.svg" alt="CoVest by CrystalPay" className="h-10 w-auto" />
+            <div className="hidden sm:block h-8 w-px bg-slate-200 mx-1" aria-hidden />
             <div>
-              <h1 className="text-xl font-black text-slate-800 tracking-tight">CoVest</h1>
-              <p className="text-xs text-slate-400 font-medium tracking-tight">Group Contributions & Real Estate Pools</p>
+              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none">CoVest</h1>
+              <p className="text-[10px] font-bold tracking-[0.18em] text-slate-400 uppercase">by CrystalPay</p>
             </div>
           </div>
 
