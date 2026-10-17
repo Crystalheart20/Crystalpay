@@ -34,6 +34,8 @@ Real members and real money are involved: be careful, and never delete data in t
 - New self-registered members start Pending (`isActive: false`) and cannot be drawn in the ballot until the admin switches them to Active in the Dashboard.
 - Rounds are months with ids like `2026-06`. The rotation runs June to December 2026. Mid-cycle joiners should not win this cycle.
 - Receipts: if the Gemini check fails or the key is missing, the server returns FLAGGED / `MANUAL-REVIEW` (never a fake approval). Status 402 means the prepaid credits on the CoVest AI Studio project ran out.
+- Contributions (winner-then-admin flow, done 2026-10-17): member uploads receipt → saved as `PENDING` (`status` on PaymentLog, see types.ts). Winner sees it in MemberPortal "Incoming Credits" and clicks Confirm Credit (`confirmedByRecipient`). Only then does the admin's Dashboard "Final Confirm" enable; it stamps `CONFIRMED` + `adminConfirmedAt/By`. Dashboard Collected Pool and Transfers Cleared count only `CONFIRMED` (old payments without `status` count as CONFIRMED for backwards compat). MemberPortal shows Awaiting winner + admin until confirmed.
+- House rule: always update this CLAUDE.md file whenever you change how the app works, so the next session starts with the truth.
 
 ## Relief Fund (opt-in, separate from Ajo)
 - Shown in MemberPortal via `SHOW_RELIEF_FUND = true`. Collections: reliefMembers, reliefContributions, reliefWithdrawals, reliefRequests, reliefVoteReceipts, reliefBallots.
@@ -43,7 +45,7 @@ Real members and real money are involved: be careful, and never delete data in t
 - Approved payouts are meant to be repayable, interest-free advances repaid monthly, with the balance locked as security. Repayment tracking is NOT built, so an approved request blocks that member's withdrawals and new requests.
 
 ## Known gaps / next
-1. Admin-confirmed contributions: the member says they paid, the admin confirms after seeing the bank credit.
+1. Admin-confirmed contributions: DONE 2026-10-17 — see "Contributions (winner-then-admin flow)" above.
 2. Repayment tracking for approved advances.
 3. Firestore rules tied to individual members. Members share anonymous sessions, so rules cannot tell members apart and the relief collections are loosely protected.
 4. A separate account for pooled money (not the MOHARB business Flutterwave account), plus a legal check before taking real funds.
