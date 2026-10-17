@@ -27,6 +27,11 @@ export interface PaymentLog {
   verifiedByAI: boolean;
   recipientId?: string; // The specific winner member receiving this payment
   confirmedByRecipient?: boolean;
+  // Admin-confirmed contributions (#1): member says "I paid" -> PENDING, admin confirms -> CONFIRMED.
+  // Undefined = CONFIRMED for backwards-compat with old records that predate this field.
+  status?: "PENDING" | "CONFIRMED";
+  adminConfirmedAt?: string;
+  adminConfirmedBy?: string;
 }
 
 export interface ContributionMonth {

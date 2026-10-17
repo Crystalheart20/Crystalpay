@@ -22,7 +22,7 @@ import {
   Inbox
 } from "lucide-react";
 import ReliefFund from "./ReliefFund";
-const SHOW_RELIEF_FUND = false; // set to true when Relief Fund is finished
+const SHOW_RELIEF_FUND = true; // set to true when Relief Fund is finished
 interface MemberPortalProps {
   members: Member[];
   months: ContributionMonth[];
@@ -222,6 +222,8 @@ export default function MemberPortal({
   
   // Checks if payment is already recorded for current member
   const hasPaidCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId);
+  const isConfirmedPayment = (p: any) => p.status === "CONFIRMED" || !p.status;
+  const hasConfirmedCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId && isConfirmedPayment(p));
   const isSelectedRecipientThisMonth = currentMonth?.recipients.includes(loggedInMemberId);
 
   // Check if payout is already confirmed by this recipient
@@ -1374,7 +1376,9 @@ export default function MemberPortal({
 
                 {(() => {
                   const paymentsMade = currentMonth?.payments.filter(p => p.memberId === loggedInMemberId) || [];
-                  const isFullyPaid = winnersOwed.length > 0 && winnersOwed.every(w => paymentsMade.some(p => p.recipientId === w.id));
+                  const confirmedMade = paymentsMade.filter(isConfirmedPayment);
+                  const isFullyConfirmed = winnersOwed.length > 0 && winnersOwed.every(w => confirmedMade.some(p => p.recipientId === w.id));
+                  const hasAnyPending = paymentsMade.some(p => p.status === "PENDING");
                   const isExempt = !!isSelectedRecipientThisMonth;
                   const isAwaitingDraw = !currentMonth || !currentMonth.recipients || currentMonth.recipients.length === 0;
 
@@ -1391,13 +1395,17 @@ export default function MemberPortal({
                             <span className="text-emerald-700 text-xs font-black mt-1 inline-flex items-center gap-1">
                               🏆 EXEMPT (RECEIVING)
                             </span>
-                          ) : isFullyPaid ? (
+                          ) : isFullyConfirmed ? (
                             <span className="text-emerald-700 text-sm font-extrabold mt-1 inline-flex items-center gap-1">
-                              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 animate-bounce" /> FULLY PAID
+                              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 animate-bounce" /> CONFIRMED
+                            </span>
+                          ) : hasAnyPending ? (
+                            <span className="text-amber-600 text-xs font-extrabold mt-1 inline-flex items-center gap-1 leading-snug">
+                              ⏳ AWAITING WINNER + ADMIN {confirmedMade.length}/{winnersOwed.length} confirmed
                             </span>
                           ) : paymentsMade.length > 0 ? (
                             <span className="text-amber-600 text-xs font-extrabold mt-1 inline-flex items-center gap-1 leading-snug">
-                              ⏳ PAID {paymentsMade.length}/{winnersOwed.length}
+                              ⏳ PENDING {paymentsMade.length}/{winnersOwed.length}
                             </span>
                           ) : (
                             <span className="text-rose-500 text-xs font-extrabold mt-1 inline-flex items-center gap-1">
@@ -1420,6 +1428,9 @@ export default function MemberPortal({
                           ) : (
                             winnersOwed.map(w => {
                               const pLog = paymentsMade.find(p => p.recipientId === w.id);
+                              const isConfirmed = pLog ? (pLog.status === "CONFIRMED" || !pLog.status) : false;
+                              const awaitingWinner = pLog ? pLog.status === "PENDING" && !pLog.confirmedByRecipient : false;
+                              const awaitingAdmin = pLog ? pLog.status === "PENDING" && !!pLog.confirmedByRecipient : false;
                               return (
                                 <div key={w.id} className="flex justify-between items-center text-xs pb-1.5 last:pb-0 border-b border-slate-200/50 last:border-0">
                                   <div>
@@ -1427,13 +1438,25 @@ export default function MemberPortal({
                                     <p className="text-[10px] text-slate-400">{w.bankName} • ₦{targetAmount.toLocaleString()}</p>
                                   </div>
                                   <div>
-                                    {pLog ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold text-[10px]">
-                                        ✓ Paid
-                                      </span>
-                                    ) : (
+                                    {!pLog ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-600 font-bold text-[10px] animate-pulse">
                                         ⏳ Outstanding
+                                      </span>
+                                    ) : isConfirmed ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold text-[10px]">
+                                        ✓ Confirmed
+                                      </span>
+                                    ) : awaitingAdmin ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]">
+                                        ⏳ Awaiting admin
+                                      </span>
+                                    ) : awaitingWinner ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
+                                        ⏳ Sent — winner must confirm
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-bold text-[10px]">
+                                        ⏳ Pending
                                       </span>
                                     )}
                                   </div>
@@ -1491,7 +1514,7 @@ export default function MemberPortal({
                 </div>
 
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Make your transfer, then upload the receipt screenshot or paste the instant SMS transaction alert code here. Our AI auditor will analyze it, auto-approve the payment, and check you off as <strong>PAID</strong> immediately!
+                  Make your transfer, then upload the receipt screenshot or paste the instant SMS alert here. Our AI will check it, then it is marked <strong>Sent — awaiting winner check</strong>. The winner presses <strong>Confirm Credit</strong> in their portal, then the admin does the <strong>Final Confirm</strong>.
                 </p>
 
                 {/* File Upload center */}
@@ -1605,7 +1628,7 @@ export default function MemberPortal({
                       ) : (
                         <>
                           <ShieldCheck className="w-4 h-4" />
-                          <span>Audit and Clear My Payment</span>
+                          <span>Audit and Send for Review</span>
                         </>
                       )}
                     </button>
@@ -1653,8 +1676,8 @@ export default function MemberPortal({
                       </div>
 
                       {auditResult.status === "APPROVED" && (
-                        <div className="bg-emerald-50 text-emerald-800 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-emerald-100">
-                          🎉 Excellent! Your savings contribution is verified. Checked off as Paid on the main ledger dashboard.
+                        <div className="bg-amber-50 text-amber-800 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-amber-200">
+                          ⏳ Sent! Marked as <strong>Awaiting winner + admin confirmation</strong>. The winner will confirm the credit, then the admin does the final check. Not yet counted as Paid.
                         </div>
                       )}
                     </div>

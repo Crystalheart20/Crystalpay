@@ -15,6 +15,8 @@ interface DashboardProps {
   currentMonthDeadline?: string;
   onSetMemberPin: (memberId: string, pin: string) => void;
   onManualPayment: (memberId: string, approved: boolean, recipientId?: string) => void;
+  onConfirmContribution?: (memberId: string, recipientId?: string, transactionRef?: string) => void;
+  onRejectContribution?: (memberId: string, recipientId?: string, transactionRef?: string) => void;
   onCloseRound: () => void;
   onResetToPristine?: () => void;
   onResetBallot?: () => void;
@@ -33,6 +35,8 @@ export default function Dashboard({
   currentMonthDeadline,
   onSetMemberPin,
   onManualPayment,
+  onConfirmContribution,
+  onRejectContribution,
   onCloseRound,
   onResetToPristine,
   onResetBallot
@@ -100,13 +104,18 @@ export default function Dashboard({
   const payoutGoal = totalTransfersExpected * targetAmount;
 
   // Filter out any payments from deleted or non-registered members to prevent "ghost" stats
-  const activeMonthPayments = currentMonth 
+  const activeMonthPayments = currentMonth
     ? currentMonth.payments.filter(p => members.some(m => m.id === p.memberId))
     : [];
 
-  const currentPoolPaid = activeMonthPayments.reduce((sum, p) => sum + p.amount, 0);
+  const isConfirmed = (p: PaymentLog) => p.status === "CONFIRMED" || !p.status;
+  const confirmedPayments = activeMonthPayments.filter(isConfirmed);
+  const pendingPayments = activeMonthPayments.filter(p => p.status === "PENDING");
 
-  const completedTransfers = activeMonthPayments.length;
+  const currentPoolPaid = confirmedPayments.reduce((sum, p) => sum + p.amount, 0);
+  const pendingPoolAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const completedTransfers = confirmedPayments.length;
   const pendingTransfersCount = Math.max(0, totalTransfersExpected - completedTransfers);
 
   const handleRegisterMember = (e: React.FormEvent) => {
@@ -238,15 +247,18 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Card 2: Current Collection size */}
+        {/* Card 2: Current Collection size — only CONFIRMED counts as collected */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-center justify-between animate-fade-in">
           <div>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-tight">Collected Pool</span>
             <h3 className="text-xl font-extrabold text-slate-800 mt-1">
               {currency} {currentPoolPaid.toLocaleString()}
             </h3>
-            <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-              {payoutGoal > 0 ? `${((currentPoolPaid / payoutGoal) * 100).toFixed(0)}% Complete` : "0% Complete"}
+            <p className="text-[10px] font-semibold mt-1">
+              {pendingPoolAmount > 0 ? (
+                <span className="text-amber-600">+ {currency} {pendingPoolAmount.toLocaleString()} pending review</span>
+              ) : null}
+              <span className="text-emerald-600 ml-1">{payoutGoal > 0 ? `${((currentPoolPaid / payoutGoal) * 100).toFixed(0)}% Confirmed` : "0% Confirmed"}</span>
             </p>
           </div>
           <div className="p-3 bg-teal-50 rounded-xl text-teal-600">
@@ -391,6 +403,54 @@ export default function Dashboard({
             </form>
           )}
 
+          {/* Pending contributions needing your final check */}
+          {pendingPayments.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <h3 className="text-xs font-black text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="h-4 w-4" /> {pendingPayments.length} Pending — Needs Your Final Check
+              </h3>
+              <p className="text-[11px] text-amber-700 leading-snug">
+                These members say they paid. The winner must press <strong>Confirm Credit</strong> first. Your <strong>Final Confirm</strong> button stays greyed out until the winner does — that is the rule you asked for.
+              </p>
+              <div className="space-y-2">
+                {pendingPayments.map((p) => {
+                  const sender = members.find(m => m.id === p.memberId);
+                  const rec = members.find(m => m.id === p.recipientId);
+                  const canFinalConfirm = !!p.confirmedByRecipient;
+                  return (
+                    <div key={`${p.memberId}-${p.recipientId}-${p.transactionRef}`} className="bg-white rounded-lg border border-amber-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="text-xs">
+                        <p className="font-bold text-slate-800">{sender?.name || p.memberId} → {rec?.name || p.recipientId}</p>
+                        <p className="text-[11px] text-slate-500 font-mono">₦{p.amount.toLocaleString()} • Ref {p.transactionRef.slice(0,12)}… • {p.date}</p>
+                        <p className="text-[11px] mt-1">
+                          {canFinalConfirm
+                            ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">✓ Winner confirmed — ready for you</span>
+                            : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 font-bold text-[10px]">⏳ Waiting for winner to confirm credit</span>}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          onClick={() => onRejectContribution && onRejectContribution(p.memberId, p.recipientId, p.transactionRef)}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-rose-50 hover:border-rose-200 text-rose-600 text-xs font-bold"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => canFinalConfirm && onConfirmContribution && onConfirmContribution(p.memberId, p.recipientId, p.transactionRef)}
+                          disabled={!canFinalConfirm}
+                          title={!canFinalConfirm ? "Winner must confirm credit first" : "Confirm as admin — this counts toward the pot"}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${canFinalConfirm ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600" : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"}`}
+                        >
+                          Final Confirm
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Members Grid List / Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
@@ -471,19 +531,28 @@ export default function Dashboard({
                           <div className="space-y-1.5">
                             {winnersOwed.map(w => {
                               const pLog = currentMonth?.payments.find(p => p.memberId === m.id && p.recipientId === w.id);
+                              const confirmed = pLog ? (pLog.status === "CONFIRMED" || !pLog.status) : false;
+                              const awaitingWinner = pLog ? pLog.status === "PENDING" && !pLog.confirmedByRecipient : false;
+                              const awaitingAdmin = pLog ? pLog.status === "PENDING" && !!pLog.confirmedByRecipient : false;
                               return (
                                 <div key={w.id} className="flex flex-col text-[10.5px]">
                                   <div className="flex items-center gap-1">
-                                    {pLog ? (
-                                      <span className="text-emerald-700 font-bold">✅ Paid ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
-                                    ) : (
+                                    {!pLog ? (
                                       <span className="text-amber-600 font-bold">⏳ Outstanding ₦{targetAmount.toLocaleString()}</span>
+                                    ) : confirmed ? (
+                                      <span className="text-emerald-700 font-bold">✅ Confirmed ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
+                                    ) : awaitingAdmin ? (
+                                      <span className="text-indigo-700 font-bold">⏳ Awaiting admin ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
+                                    ) : awaitingWinner ? (
+                                      <span className="text-amber-700 font-bold">⏳ Sent — winner must confirm ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
+                                    ) : (
+                                      <span className="text-amber-700 font-bold">⏳ Pending ₦{(pLog.amount || targetAmount).toLocaleString()}</span>
                                     )}
                                     <span className="text-slate-400 text-[9.5px]">to {w.name.split(" ")[0]}</span>
                                   </div>
                                   {pLog && (
                                     <span className="text-[9px] font-mono text-slate-400 block -mt-0.5">
-                                      Ref: {pLog.transactionRef.slice(0, 8)}...
+                                      Ref: {pLog.transactionRef.slice(0, 8)}...{pLog.confirmedByRecipient ? " · winner ✓" : ""}
                                     </span>
                                   )}
                                 </div>

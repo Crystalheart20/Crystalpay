@@ -532,7 +532,8 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       transactionRef: ref,
       senderAccountName: senderName || "Verified Member",
       verifiedByAI: true,
-      recipientId: targetRecipient
+      recipientId: targetRecipient,
+      status: "PENDING"
     };
 
     const updatedPayments = [...targetMonth.payments, newPayment];
@@ -638,7 +639,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
 
     if (approved) {
       const recipientsToPay = recipientId ? [recipientId] : targetMonth.recipients.filter(rId => rId !== memberId);
-      
+
       let newPayments = [...targetMonth.payments];
       recipientsToPay.forEach(targetRecId => {
         const exists = newPayments.some(p => p.memberId === memberId && p.recipientId === targetRecId);
@@ -650,11 +651,13 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
             transactionRef: "OVERRIDE-" + Math.floor(Math.random() * 100000),
             senderAccountName: "System Approved",
             verifiedByAI: false,
-            recipientId: targetRecId
+            recipientId: targetRecId,
+            status: "PENDING",
+            confirmedByRecipient: false
           });
         }
       });
-      
+
       updatedMonth = {
         ...targetMonth,
         payments: newPayments
@@ -668,6 +671,12 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       };
     }
 
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+        ? { ...updatedMonth, groupId: selectedGroupId } as any
+        : m
+    ));
+
     try {
       await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), {
         ...updatedMonth,
@@ -676,6 +685,56 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleConfirmContribution = async (memberId: string, recipientId?: string, transactionRef?: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+    const target = targetMonth.payments.find(p => {
+      if (p.memberId !== memberId) return false;
+      if (recipientId && p.recipientId !== recipientId) return false;
+      if (transactionRef && p.transactionRef !== transactionRef) return false;
+      if (!transactionRef && p.status !== "PENDING") return false;
+      return true;
+    });
+    if (!target) return;
+    if (!target.confirmedByRecipient) {
+      console.warn("Admin confirm blocked: recipient has not confirmed receipt yet.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const by = adminUser?.email || "admin";
+    const updatedPayments = targetMonth.payments.map(p => {
+      const matchMember = p.memberId === memberId;
+      const matchRecipient = recipientId ? p.recipientId === recipientId : true;
+      const matchRef = transactionRef ? p.transactionRef === transactionRef : p.status === "PENDING";
+      if (matchMember && matchRecipient && matchRef && p.confirmedByRecipient) {
+        return { ...p, status: "CONFIRMED" as const, adminConfirmedAt: now, adminConfirmedBy: by };
+      }
+      return p;
+    });
+    const updatedMonth: ContributionMonth & { groupId: string } = { ...targetMonth, payments: updatedPayments, groupId: selectedGroupId };
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId ? { ...updatedMonth } as any : m
+    ));
+    try { await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth); } catch (e) { console.error(e); }
+  };
+
+  const handleRejectContribution = async (memberId: string, recipientId?: string, transactionRef?: string) => {
+    const targetMonth = months.find(m => m.id === currentMonthId);
+    if (!targetMonth) return;
+    const updatedPayments = targetMonth.payments.filter(p => {
+      if (p.memberId !== memberId) return true;
+      if (recipientId && p.recipientId !== recipientId) return true;
+      if (transactionRef && p.transactionRef !== transactionRef) return true;
+      if (!transactionRef && p.status !== "PENDING") return true;
+      return false;
+    });
+    const updatedMonth: ContributionMonth & { groupId: string } = { ...targetMonth, payments: updatedPayments, groupId: selectedGroupId };
+    setAllMonths(prev => prev.map(m =>
+      m.id === currentMonthId && (m.groupId || "default") === selectedGroupId ? { ...updatedMonth } as any : m
+    ));
+    try { await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth); } catch (e) { console.error(e); }
   };
 
   const handleConfirmPayoutReceipt = async (memberId: string, monthId: string) => {
@@ -1043,6 +1102,8 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
               onToggleMemberActive={handleToggleMemberActive}
               onConfigureMonth={handleConfigureMonth}
               onManualPayment={handleManualPayment}
+              onConfirmContribution={handleConfirmContribution}
+              onRejectContribution={handleRejectContribution}
               onCloseRound={handleCloseRound}
               onResetToPristine={handleResetToPristine}
               onResetBallot={handleResetBallot}
