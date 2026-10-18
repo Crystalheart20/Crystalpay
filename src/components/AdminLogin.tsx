@@ -42,8 +42,8 @@ export default function AdminLogin() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-sm">
         <div className="flex flex-col items-center text-center mb-6">
-          <img src="/logo.svg" alt="CoVest by CrystalPay" className="h-12 w-auto mb-3" />
-          <h1 className="text-lg font-black text-slate-800">CoVest Admin</h1>
+          <img src="/mark.svg" alt="CoVest" className="h-12 w-12 rounded-xl shadow-sm mb-3" />
+          <h1 className="text-lg font-black text-slate-800">CoVest</h1>
           <p className="text-xs text-slate-400 mt-1">by CrystalPay — Sign in to manage your group</p>
         </div>
 

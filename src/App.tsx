@@ -876,8 +876,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="CoVest by CrystalPay" className="h-10 w-auto" />
-            <div className="hidden sm:block h-8 w-px bg-slate-200 mx-1" aria-hidden />
+            <img src="/mark.svg" alt="CoVest" className="h-10 w-10 rounded-xl shadow-sm" />
             <div>
               <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none">CoVest</h1>
               <p className="text-[10px] font-bold tracking-[0.18em] text-slate-400 uppercase">by CrystalPay</p>
