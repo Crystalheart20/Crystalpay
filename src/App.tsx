@@ -329,7 +329,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     } catch (e: any) {
       console.error(e);
       if (e?.code === "auth/email-already-in-use") {
-        return { success: false, error: "That email is already registered." };
+        return { success: false, error: "That email is already used — please use a different email for members. Your admin email belongs in the Admin portal." };
       }
       if (e?.code === "auth/weak-password") {
         return { success: false, error: "Password should be at least 6 characters." };
@@ -483,7 +483,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     } catch (e: any) {
       console.error(e);
       if (e?.code === "auth/email-already-in-use") {
-        return { success: false, error: "That email is already registered." };
+        return { success: false, error: "That email is already used — please use a different email for members. Your admin email belongs in the Admin portal." };
       }
       if (e?.code === "auth/weak-password") {
         return { success: false, error: "Password should be at least 6 characters." };
