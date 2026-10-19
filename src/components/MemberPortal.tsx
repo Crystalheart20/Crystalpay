@@ -598,7 +598,7 @@ export default function MemberPortal({
               </div>
             </div>
 
-            {activeRecipientsList.length > 0 ? (
+            {memberTab === "overview" && activeRecipientsList.length > 0 ? (
               <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wide">
                   <Trophy className="w-4 h-4 text-amber-500 animate-bounce" />
@@ -938,7 +938,7 @@ export default function MemberPortal({
         <div className="space-y-6">
 
           {/* Live Deadline Countdown Banner */}
-          {deadlineCountdown && (
+          {memberTab === "overview" && deadlineCountdown && (
             <div className={`rounded-2xl px-5 py-4 border ${
               deadlineCountdown.overdue
                 ? "bg-red-50 border-red-200"
@@ -1067,7 +1067,33 @@ export default function MemberPortal({
             </button>
           </div>
 
-          {SHOW_RELIEF_FUND && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-1.5 flex flex-wrap gap-1.5">
+            {(() => {
+              const isReceiver = !!isSelectedRecipientThisMonth;
+              const tabs = [
+                { id: "overview", label: "Overview" },
+                { id: "recipient", label: "Recipient Details" },
+                ...(!isReceiver ? [{ id: "upload", label: "Upload Proof" }] : []),
+                ...(isReceiver ? [{ id: "confirm", label: "Confirm Receipts" }] : []),
+                { id: "ledger", label: "My Ledger" },
+                ...(SHOW_RELIEF_FUND ? [{ id: "relief", label: "Relief Fund" }] : []),
+              ];
+              return tabs.map(function(tabItem) {
+                var active = memberTab === tabItem.id;
+                return (
+                  <button
+                    key={tabItem.id}
+                    onClick={function() { setMemberTab(tabItem.id); }}
+                    className={"px-3 py-2 rounded-xl text-xs font-bold border transition " + (active ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-white")}
+                  >
+                    {tabItem.label}
+                  </button>
+                );
+              });
+            })()}
+          </div>
+
+          {memberTab === "relief" && SHOW_RELIEF_FUND && (
             <ReliefFund
               groupId={loggedInMember.groupId || "default"}
               memberId={loggedInMember.id}
@@ -1076,8 +1102,23 @@ export default function MemberPortal({
             />
           )}
 
-          {/* Banner: List of All Active Rotational Winners */}
-          {activeRecipientsList.length > 0 ? (
+          {memberTab === "overview" && (
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+              <h4 className="font-bold text-slate-800 text-sm mb-1">Welcome to your CoVest portal</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                You are a <strong>{isSelectedRecipientThisMonth ? "Receiver" : "Sender"}</strong> this month. {isSelectedRecipientThisMonth ? "Open Confirm Receipts to confirm credits from members, then admin does Final Confirm." : "Open Recipient Details to see who to pay, then Upload Proof to send your receipt."}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button onClick={function() { setMemberTab(isSelectedRecipientThisMonth ? "confirm" : "recipient"); }} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">
+                  Go to {isSelectedRecipientThisMonth ? "Confirm Receipts" : "Recipient Details"} &rarr;
+                </button>
+                <button onClick={function() { setMemberTab("ledger"); }} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700">My Ledger</button>
+              </div>
+            </div>
+          )}
+
+          {/* Banner: List of All Active Rotational Winners - Overview only */}
+          {memberTab === "overview" && activeRecipientsList.length > 0 ? (
             <div className="bg-gradient-to-r from-emerald-500/10 via-indigo-500/5 to-teal-500/10 border-2 border-emerald-500/20 rounded-2xl p-5 shadow-sm space-y-3">
               <div className="flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-amber-500 animate-bounce" />
@@ -1117,23 +1158,23 @@ export default function MemberPortal({
                 })}
               </div>
             </div>
-          ) : (
+          ) : memberTab === "overview" ? (
             <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 text-center max-w-2xl mx-auto space-y-1">
               <p className="text-sm font-bold text-slate-700">⏳ Ballot Draw Awaiting Execution</p>
               <p className="text-xs text-slate-400">
                 The group administrator has not conducted the random ballot draw for {currentMonth?.name} yet. Check back soon for approved recipients!
               </p>
             </div>
-          )}
+          ) : null}
 
-          {/* Persona Workflows */}
+          {/* Persona Workflows - inner tabs */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
             {/* LHS: Task List, Winner details and payment history */}
             <div className="lg:col-span-6 space-y-6">
               
               {/* Box 1: Payout recipient Details and Transfer instructions */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
+              <div className={"bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4 " + (memberTab !== "recipient" ? "hidden" : "")}>
                 
                 <div className="flex items-center justify-between border-b border-slate-50 pb-3">
                   <div className="flex items-center gap-2">
@@ -1222,7 +1263,7 @@ export default function MemberPortal({
 
               {/* Box 1B: WINNER SPECIAL CONFIRMATION PORTAL PANEL */}
               {isSelectedRecipientThisMonth && (
-                <div className="bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-indigo-500/10 rounded-2xl p-6 border-2 border-amber-500/20 shadow-sm space-y-4">
+                <div className={"bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-indigo-500/10 rounded-2xl p-6 border-2 border-amber-500/20 shadow-sm space-y-4 " + (memberTab !== "confirm" ? "hidden" : "")}>
                   <div className="flex items-center gap-2">
                     <Trophy className="h-6 w-6 text-amber-500 animate-bounce" />
                     <div>
@@ -1371,7 +1412,7 @@ export default function MemberPortal({
               )}
 
               {/* Box 2: Personal Saving Profile Streak & Contribution History info */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
+              <div className={"bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4 " + (memberTab !== "ledger" ? "hidden" : "")}>
                 <h4 className="font-bold text-slate-800 text-sm">Your Personal Contribution Ledger</h4>
 
                 {(() => {
@@ -1500,7 +1541,7 @@ export default function MemberPortal({
             {/* RHS: OCR Upload Proof Center */}
             <div className="lg:col-span-6 space-y-6">
               
-              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-5">
+              <div className={"bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-5 " + (memberTab !== "upload" ? "hidden" : "")}>
                 
                 <div className="flex items-center justify-between border-b border-slate-50 pb-3">
                   <div className="flex items-center gap-2">

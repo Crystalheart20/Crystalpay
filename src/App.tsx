@@ -114,6 +114,7 @@ const [authLoading, setAuthLoading] = useState(true);
   });
   const [lastDrawNotice, setLastDrawNotice] = useState<string>("");
   const [firestoreMonthsReady, setFirestoreMonthsReady] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const members = allMembers.filter(m => (m.groupId || "default") === selectedGroupId);
   const months = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
@@ -872,27 +873,46 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       
-      <header className="bg-white border-b border-slate-100 py-4 px-6 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          
+      <header className="bg-white border-b border-slate-100 py-3 px-4 sm:px-6 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img src="/mark.svg" alt="CoVest" className="h-10 w-10 rounded-xl shadow-sm" />
+            {!isMemberOnlyUrl ? (
+              <button
+                onClick={() => setSidebarOpen(o => !o)}
+                className="inline-flex sm:hidden p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                aria-label="Toggle menu"
+              >
+                <span className="text-sm font-black">☰</span>
+              </button>
+            ) : null}
+            <img src="/mark.svg" alt="CoVest" className="h-9 w-9 rounded-xl shadow-sm" />
             <div>
-              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none">CoVest</h1>
+              <h1 className="text-base sm:text-xl font-black text-slate-800 tracking-tight leading-none">CoVest</h1>
               <p className="text-[10px] font-bold tracking-[0.18em] text-slate-400 uppercase">by CrystalPay</p>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="bg-indigo-50/50 rounded-xl px-4 py-1.5 border border-indigo-100 flex items-center gap-2 text-xs text-indigo-700 font-bold">
+          <div className="hidden sm:flex flex-wrap items-center gap-2">
+            <div className="bg-indigo-50/50 rounded-xl px-3 py-1.5 border border-indigo-100 flex items-center gap-2 text-xs text-indigo-700 font-bold">
               <Calendar className="h-4 w-4" />
               <span>Round: <span className="text-slate-700">{currentMonth?.name || "N/A"}</span></span>
             </div>
-            
-            <div className="bg-emerald-50 text-emerald-800 rounded-xl px-4 py-1.5 border border-emerald-100 flex items-center gap-2 text-xs font-bold">
+            <div className="bg-emerald-50 text-emerald-800 rounded-xl px-3 py-1.5 border border-emerald-100 flex items-center gap-2 text-xs font-bold">
               <Coins className="h-4 w-4" />
               <span>Target: <span className="text-slate-800">₦ {currentMonth?.targetAmountPerMember.toLocaleString() || 0}</span></span>
             </div>
+          </div>
+          {!isMemberOnlyUrl ? (
+            <button onClick={() => setSidebarOpen(o => !o)} className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50">
+              <span>☰</span> Menu
+            </button>
+          ) : null}
+        </div>
+        <div className="sm:hidden mt-3 flex gap-2">
+          <div className="flex-1 bg-indigo-50/50 rounded-xl px-3 py-2 border border-indigo-100 flex items-center gap-2 text-xs text-indigo-700 font-bold">
+            <Calendar className="h-4 w-4" /> <span>{currentMonth?.name || "N/A"}</span>
+          </div>
+          <div className="flex-1 bg-emerald-50 text-emerald-800 rounded-xl px-3 py-2 border border-emerald-100 flex items-center gap-2 text-xs font-bold">
+            <Coins className="h-4 w-4" /> <span>₦ {currentMonth?.targetAmountPerMember.toLocaleString() || 0}</span>
           </div>
         </div>
       </header>
@@ -993,73 +1013,60 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
           </div>
         ) : null}
 
-        <div className="flex flex-wrap bg-slate-200/50 rounded-xl p-1 max-w-5xl gap-1">
+        {/* Desktop: keep group selector above content; tabs move to sidebar */}
+        <div className="sm:hidden flex gap-2">
           <button
             onClick={() => setActiveTab("portal")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[120px] justify-center py-2.5 px-3 rounded-lg text-xs font-extrabold transition duration-200 ${
-              activeTab === "portal" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <User className="h-4 w-4" />
-            <span>👥 Member Portal</span>
-          </button>
-
+            className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold border transition ${activeTab === "portal" ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200"}`}
+          >👥 Member Portal</button>
           <button
             onClick={() => setActiveTab("realestate")}
-            className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-extrabold transition duration-200 ${
-              activeTab === "realestate" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-800 hover:bg-white/30"
-            }`}
-          >
-            <Building2 className="h-4 w-4" />
-            <span>🏙️ Real Estate Pools</span>
-          </button>
-
-          {!isMemberOnlyUrl && (
-            <>
-              <button
-                onClick={() => setActiveTab("dashboard")}
-                className={`flex items-center gap-1.5 flex-1 min-w-[125px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-200 ${
-                  activeTab === "dashboard" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-                }`}
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                <span>Admin Control Panel</span>
-              </button>
-              
-              <button
-                onClick={() => setActiveTab("ballot")}
-                className={`flex items-center gap-1.5 flex-1 min-w-[110px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-                  activeTab === "ballot" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-                }`}
-              >
-                <Award className="h-4 w-4" />
-                <span>Ballot Drawer</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("auditor")}
-                className={`flex items-center gap-1.5 flex-1 min-w-[130px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-                  activeTab === "auditor" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-                }`}
-              >
-                <ShieldCheck className="h-4 w-4" />
-                <span>Receipt Auditing OCR</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("whatsapp")}
-                className={`flex items-center gap-1.5 flex-1 min-w-[140px] justify-center py-2.5 px-3 rounded-lg text-xs font-bold transition duration-150 ${
-                  activeTab === "whatsapp" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800 hover:bg-white/30"
-                }`}
-              >
-                <MessageSquare className="h-4 w-4" />
-                <span>WhatsApp group simulator</span>
-              </button>
-            </>
-          )}
+            className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold border transition ${activeTab === "realestate" ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200"}`}
+          >🏙️ Real Estate</button>
         </div>
 
-        <div className="min-h-[450px]">
+        <div className="flex gap-4 sm:gap-6">
+          {!isMemberOnlyUrl && (
+            <aside className={`shrink-0 ${sidebarOpen ? "block" : "hidden"} sm:block sm:w-[220px] sm:sticky sm:top-[72px] sm:self-start sm:h-[calc(100vh-84px)] sm:overflow-y-auto`}>
+              {sidebarOpen && <button onClick={() => setSidebarOpen(false)} className="sm:hidden fixed inset-0 bg-black/30 z-20" aria-label="Close menu backdrop" />}
+              <div className="fixed sm:static inset-y-0 left-0 z-30 sm:z-auto w-[86vw] max-w-[300px] sm:w-[220px] bg-white sm:bg-white border-r sm:border sm:rounded-2xl border-slate-200 shadow-xl sm:shadow-sm p-3 sm:p-4 space-y-4 overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black tracking-widest text-slate-500 uppercase">Menu</span>
+                  <button onClick={() => setSidebarOpen(false)} className="sm:hidden px-2 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-600">✕</button>
+                </div>
+                <nav className="space-y-1">
+                  {[
+                    { id: "portal", label: "👥 Member Portal" },
+                    { id: "realestate", label: "🏙️ Real Estate Pools" },
+                    { id: "dashboard", label: "Admin Control Panel", icon: LayoutDashboard },
+                    { id: "ballot", label: "Ballot Drawer", icon: Award },
+                    { id: "auditor", label: "Receipt Auditing OCR", icon: ShieldCheck },
+                    { id: "whatsapp", label: "WhatsApp Simulator", icon: MessageSquare },
+                  ].filter(item => item.id === "portal" || item.id === "realestate" || !isMemberOnlyUrl).map(item => {
+                    const ActiveIcon = (item as any).icon;
+                    const isActive = activeTab === (item.id as any);
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => { setActiveTab(item.id as any); setSidebarOpen(false); }}
+                        className={`w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition ${isActive ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-white"}`}
+                      >
+                        {ActiveIcon ? <ActiveIcon className="h-4 w-4 shrink-0" /> : null}
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Invite</p>
+                  <button onClick={handleCopyLink} className={`w-full px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 border transition ${copiedLink ? "bg-emerald-600 text-white border-emerald-600" : "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700"}`}>
+                    <Share2 className="h-3.5 w-3.5" /> {copiedLink ? "✓ Copied Member Link" : "Copy Member Link"}
+                  </button>
+                </div>
+              </div>
+            </aside>
+          )}
+          <div className="flex-1 min-w-0 min-h-[450px]">
           {activeTab === "portal" && (
             <MemberPortal
               members={allMembers}
@@ -1180,10 +1187,11 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
             </div>
           )}
         </div>
+        </div>
       </main>
 
       <footer className="bg-white border-t border-slate-100 py-4 px-6 text-center text-xs text-slate-400 font-medium">
-        <p>© 2026 CoVest Platform • Fully Autonomous Co-Op & Group Investment Assistant • Running on Gemini 3.5</p>
+        <p>© 2026 CoVest by CrystalPay • Group Contributions & Real Estate Pools</p>
       </footer>
 
     </div>

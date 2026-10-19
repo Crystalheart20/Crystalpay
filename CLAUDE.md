@@ -27,7 +27,8 @@ Real members and real money are involved: be careful, and never delete data in t
 - Deploy (run from this folder): `gcloud run deploy ajo-app --source . --region europe-west1 --allow-unauthenticated --port 3000 --min-instances 0 --max-instances 2 --env-vars-file env.yaml`
 - `git push` only backs up to GitHub (Crystalheart20/Crystalpay, branch main). It does NOT update the live site.
 - `Dockerfile` builds the app. `env.yaml` holds GEMINI_API_KEY; it is in `.gitignore` and `.gcloudignore`.
-- Branding: public/logo.svg (header + OG image, "CoVest by CrystalPay" shield+crystal), public/favicon.svg (tab/address bar), public/apple-touch-icon.svg (iOS home screen). Wired in index.html and App.tsx header + AdminLogin.
+- Branding: public/logo.svg (header + OG image, "CoVest by CrystalPay" shield+crystal), public/mark.svg (icon-only for App header + AdminLogin), public/favicon.svg (tab/address bar), public/apple-touch-icon.svg (iOS home screen). Wired in index.html and App.tsx header + AdminLogin.
+- Layout: App.tsx has app-level sidebar drawer (hamburger on mobile, 220px sticky on desktop) for Member Portal / Real Estate Pools / Admin panels. MemberPortal.tsx has inner member tabs (Overview / Recipient Details / Upload Proof for senders, Confirm Receipts for receivers / My Ledger / Relief Fund) to avoid long scroll; boxes hidden when not active.
 - The old Railway project is paused and can be deleted once everything is confirmed.
 
 ## How things work
