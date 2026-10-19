@@ -284,6 +284,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
 
   const eligibleMembers = members.filter(m => {
     const alreadyWon = months.some(mon => mon.recipients.includes(m.id)) || m.collectedMonths.length > 0;
+    if (!alreadyWon && m.isActive && m.eligibleFromRoundId && m.eligibleFromRoundId > currentMonthId) return false;
     return !alreadyWon && m.isActive;
   });
 
@@ -353,11 +354,16 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     }
   };
 
-  const handleToggleMemberActive = async (id: string) => {
+  const handleToggleMemberActive = async (id: string, opts?: { eligibleFromRoundId?: string | null }) => {
     const member = allMembers.find(m => m.id === id);
     if (!member) return;
-    const updated = { ...member, isActive: !member.isActive };
-    setAllMembers(prev => prev.map(m => m.id === id ? updated : m));
+    const nextActive = opts && "eligibleFromRoundId" in opts ? member.isActive : !member.isActive;
+    const updated: Member & { eligibleFromRoundId?: string } = { ...member, isActive: nextActive };
+    if (opts && "eligibleFromRoundId" in opts) {
+      if (opts.eligibleFromRoundId) updated.eligibleFromRoundId = opts.eligibleFromRoundId;
+      else delete (updated as any).eligibleFromRoundId;
+    }
+    setAllMembers(prev => prev.map(m => m.id === id ? updated as any : m));
     try {
       await setDoc(doc(db, "members", id), updated);
     } catch (e) {

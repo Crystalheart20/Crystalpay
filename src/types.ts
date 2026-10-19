@@ -12,6 +12,7 @@ export interface Member {
   accountName: string;
   collectedMonths: string[]; // List of historical round IDs they have won/collected
   isActive: boolean;
+  eligibleFromRoundId?: string; // if set, member is only eligible to be drawn from this round onward (e.g. "2026-07"); allows approving now but joining next draw
   groupId?: string;
   pin?: string; // 4-digit PIN — legacy fallback during transition to email/password login
   email?: string; // Set once member registers with email + password

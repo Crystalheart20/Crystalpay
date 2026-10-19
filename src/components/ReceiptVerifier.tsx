@@ -323,10 +323,16 @@ export default function ReceiptVerifier({
                   <p className="text-sm font-bold text-slate-800 mt-0.5 max-w-[150px] truncate">{result.senderName || "Unknown"}</p>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-200/60">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Elected Amount</p>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">
-                    {result.currency || currency} {Number(result.amount).toLocaleString()}
-                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">{result.status === "APPROVED" ? "Audited Amount" : "Detected Amount (not approved)"}</p>
+                  {result.status === "APPROVED" ? (
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">
+                      {result.currency || currency} {Number(result.amount || 0).toLocaleString()}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-bold text-amber-700 mt-0.5">
+                      {result.currency || currency} {Number(result.amount || 0).toLocaleString()} <span className="text-[11px] font-normal text-slate-400">· Expected {currency} {expectedAmount.toLocaleString()}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-200/60">
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Payment Date</p>
@@ -350,11 +356,15 @@ export default function ReceiptVerifier({
                 <p className="text-slate-600 leading-relaxed font-medium">{result.explanation}</p>
               </div>
 
-              {result.status === "APPROVED" && (
+              {result.status === "APPROVED" ? (
                 <div className="text-center py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-xl text-xs font-semibold">
                   Payment automatically verified and checked to member profile.
                 </div>
-              )}
+              ) : result.status === "FLAGGED" ? (
+                <div className="text-center py-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold">
+                  ⚠️ Flagged — not counted as Paid. Expected {currency} {expectedAmount.toLocaleString()}.
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="h-64 flex flex-col justify-center items-center text-center text-slate-400">

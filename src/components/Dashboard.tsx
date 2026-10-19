@@ -9,7 +9,7 @@ interface DashboardProps {
   currency: string;
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
   onRemoveMember: (id: string) => void;
-  onToggleMemberActive?: (id: string) => void;
+  onToggleMemberActive?: (id: string, opts?: { eligibleFromRoundId?: string | null }) => void;
   onConfigureMonth: (targetAmount: number, spots: 1 | 2, currencyCode: string) => void;
   onSetDeadline: (deadlineDate: string) => void;
   currentMonthDeadline?: string;
@@ -518,6 +518,8 @@ export default function Dashboard({
                           </span>
                         ) : !m.isActive ? (
                           <span className="text-amber-500 text-[10px] font-semibold">⏳ Pending approval</span>
+                        ) : (m as any).eligibleFromRoundId ? (
+                          <span className="text-indigo-500 text-[10px] font-semibold">🕓 Active — joins {(m as any).eligibleFromRoundId}</span>
                         ) : (
                           <span className="text-slate-400 text-[10px]">Eligible in pool</span>
                         )}
@@ -628,17 +630,43 @@ export default function Dashboard({
                           )}
                         </div>
                             {onToggleMemberActive && (
-                          <button
-                            onClick={() => onToggleMemberActive(m.id)}
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 ${
-                              m.isActive
-                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
-                            title={m.isActive ? "Deactivate (exclude from ballot)" : "Activate (include in ballot)"}
-                          >
-                            {m.isActive ? "Active" : "Pending"}
-                          </button>
+                          <>
+                            {!m.isActive ? (
+                              <button
+                                onClick={() => {
+                                  const curRound = currentMonthId;
+                                  const [y, mm] = curRound.split("-").map(Number);
+                                  const nextM = mm === 12 ? `01` : String(mm + 1).padStart(2, "0");
+                                  const nextY = mm === 12 ? y + 1 : y;
+                                  const nextRound = `${nextY}-${nextM}`;
+                                  onToggleMemberActive(m.id);
+                                  if (window.confirm(`Approve ${m.name} but skip this month's draw?\n\nOK = joins ${nextRound} (next cycle)\nCancel = joins now (${curRound})`)) {
+                                    onToggleMemberActive(m.id, { eligibleFromRoundId: nextRound });
+                                  }
+                                }}
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                title="Approve — choose this cycle or next"
+                              >
+                                Pending
+                              </button>
+                            ) : (m as any).eligibleFromRoundId ? (
+                              <button
+                                onClick={() => onToggleMemberActive(m.id, { eligibleFromRoundId: null })}
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                                title="Remove next-cycle hold — eligible now"
+                              >
+                                Joins {(m as any).eligibleFromRoundId} ✕
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => onToggleMemberActive(m.id)}
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                title="Deactivate (exclude from ballot)"
+                              >
+                                Active
+                              </button>
+                            )}
+                          </>
                         )}
                         <button
                           onClick={() => onRemoveMember(m.id)}

@@ -1721,8 +1721,12 @@ export default function MemberPortal({
                           <span className="font-extrabold text-slate-800">{auditResult.senderName || loggedInMember.name}</span>
                         </div>
                         <div className="bg-white p-2 rounded-lg border border-slate-200/60">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Audited Amount</span>
-                          <span className="font-extrabold text-slate-800">{auditResult.currency || currency} {Number(auditResult.amount || targetAmount).toLocaleString()}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">{auditResult.status === "APPROVED" ? "Audited Amount" : "Detected Amount (not approved)"}</span>
+                          {auditResult.status === "APPROVED" ? (
+                            <span className="font-extrabold text-slate-800">{auditResult.currency || currency} {Number(auditResult.amount || 0).toLocaleString()}</span>
+                          ) : (
+                            <span className="font-extrabold text-amber-700">{auditResult.currency || currency} {Number(auditResult.amount || 0).toLocaleString()} <span className="text-[10px] font-normal text-slate-400">· Expected {currency} {targetAmount.toLocaleString()}</span></span>
+                          )}
                         </div>
                       </div>
 
@@ -1736,11 +1740,15 @@ export default function MemberPortal({
                         {auditResult.explanation}
                       </div>
 
-                      {auditResult.status === "APPROVED" && (
+                      {auditResult.status === "APPROVED" ? (
                         <div className="bg-amber-50 text-amber-800 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-amber-200">
                           ⏳ Sent! Marked as <strong>Awaiting winner + admin confirmation</strong>. The winner will confirm the credit, then the admin does the final check. Not yet counted as Paid.
                         </div>
-                      )}
+                      ) : auditResult.status === "FLAGGED" ? (
+                        <div className="bg-rose-50 text-rose-700 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-rose-200">
+                          ⚠️ Flagged — not counted as Paid. Please check the amount and details above, then contact the admin if the receipt looks wrong. Expected is {currency} {targetAmount.toLocaleString()}.
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
