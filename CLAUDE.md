@@ -38,6 +38,7 @@ Real members and real money are involved: be careful, and never delete data in t
 - Rounds are months with ids like `2026-06`. The rotation runs June to December 2026. Mid-cycle joiners should not win this cycle.
 - Receipts: if the Gemini check fails or the key is missing, the server returns FLAGGED / `MANUAL-REVIEW` (never a fake approval). Status 402 means the prepaid credits on the CoVest AI Studio project ran out.
 - Contributions (winner-then-admin flow, done 2026-10-17): member uploads receipt → saved as `PENDING` (`status` on PaymentLog, see types.ts). Winner sees it in MemberPortal "Incoming Credits" and clicks Confirm Credit (`confirmedByRecipient`). Only then does the admin's Dashboard "Final Confirm" enable; it stamps `CONFIRMED` + `adminConfirmedAt/By`. Dashboard Collected Pool and Transfers Cleared count only `CONFIRMED` (old payments without `status` count as CONFIRMED for backwards compat). MemberPortal shows Awaiting winner + admin until confirmed.
+- Member inner tabs (done 2026-10-19): `MemberPortal.tsx` uses `memberTab` state (overview / recipient / upload / confirm / ledger / relief). Pre-draw (`isDrawDone=false` when `recipients.length===0`) shows only Overview/Ledger/Relief and "Awaiting ballot" message; post-draw, sender gets Recipient+Upload, receiver gets Confirm; boxes hidden via `hidden` class to preserve form state.
 - House rule: always update this CLAUDE.md file whenever you change how the app works, so the next session starts with the truth.
 
 ## Relief Fund (opt-in, separate from Ajo)

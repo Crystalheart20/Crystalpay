@@ -127,6 +127,7 @@ export default function MemberPortal({
   const [receiptConfirming, setReceiptConfirming] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [memberTab, setMemberTab] = useState<"overview" | "recipient" | "upload" | "confirm" | "ledger" | "relief">("overview");
 
   const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
   const loggedInMember = members.find(m => m.id === loggedInMemberId);
@@ -225,6 +226,7 @@ export default function MemberPortal({
   const isConfirmedPayment = (p: any) => p.status === "CONFIRMED" || !p.status;
   const hasConfirmedCurrentMonth = currentMonth?.payments.some(p => p.memberId === loggedInMemberId && isConfirmedPayment(p));
   const isSelectedRecipientThisMonth = currentMonth?.recipients.includes(loggedInMemberId);
+  const isDrawDone = !!currentMonth && Array.isArray(currentMonth.recipients) && currentMonth.recipients.length > 0;
 
   // Check if payout is already confirmed by this recipient
   const isPayoutConfirmedByThisRecipient = currentMonth?.payoutConfirmedByRecipients?.includes(loggedInMemberId) || false;
@@ -1069,15 +1071,19 @@ export default function MemberPortal({
 
           <div className="bg-white rounded-2xl border border-slate-200 p-1.5 flex flex-wrap gap-1.5">
             {(() => {
-              const isReceiver = !!isSelectedRecipientThisMonth;
-              const tabs = [
-                { id: "overview", label: "Overview" },
-                { id: "recipient", label: "Recipient Details" },
-                ...(!isReceiver ? [{ id: "upload", label: "Upload Proof" }] : []),
-                ...(isReceiver ? [{ id: "confirm", label: "Confirm Receipts" }] : []),
-                { id: "ledger", label: "My Ledger" },
-                ...(SHOW_RELIEF_FUND ? [{ id: "relief", label: "Relief Fund" }] : []),
-              ];
+              const tabs = [];
+              tabs.push({ id: "overview", label: "Overview" });
+              if (!isDrawDone) {
+                tabs.push({ id: "ledger", label: "My Ledger" });
+                if (SHOW_RELIEF_FUND) tabs.push({ id: "relief", label: "Relief Fund" });
+              } else {
+                var isReceiver = !!isSelectedRecipientThisMonth;
+                tabs.push({ id: "recipient", label: "Recipient Details" });
+                if (!isReceiver) tabs.push({ id: "upload", label: "Upload Proof" });
+                if (isReceiver) tabs.push({ id: "confirm", label: "Confirm Receipts" });
+                tabs.push({ id: "ledger", label: "My Ledger" });
+                if (SHOW_RELIEF_FUND) tabs.push({ id: "relief", label: "Relief Fund" });
+              }
               return tabs.map(function(tabItem) {
                 var active = memberTab === tabItem.id;
                 return (
@@ -1104,16 +1110,30 @@ export default function MemberPortal({
 
           {memberTab === "overview" && (
             <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-              <h4 className="font-bold text-slate-800 text-sm mb-1">Welcome to your CoVest portal</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                You are a <strong>{isSelectedRecipientThisMonth ? "Receiver" : "Sender"}</strong> this month. {isSelectedRecipientThisMonth ? "Open Confirm Receipts to confirm credits from members, then admin does Final Confirm." : "Open Recipient Details to see who to pay, then Upload Proof to send your receipt."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button onClick={function() { setMemberTab(isSelectedRecipientThisMonth ? "confirm" : "recipient"); }} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">
-                  Go to {isSelectedRecipientThisMonth ? "Confirm Receipts" : "Recipient Details"} &rarr;
-                </button>
-                <button onClick={function() { setMemberTab("ledger"); }} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700">My Ledger</button>
-              </div>
+              {!isDrawDone ? (
+                <>
+                  <h4 className="font-bold text-slate-800 text-sm mb-1">Awaiting ballot for {currentMonth?.name || "this month"}</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    No sender or receiver for this month yet. The admin has not run the ballot draw — once they do, your role and tabs will appear here automatically.
+                  </p>
+                  <div className="mt-3">
+                    <button onClick={function() { setMemberTab("ledger"); }} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700">View My Ledger</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h4 className="font-bold text-slate-800 text-sm mb-1">Welcome to your CoVest portal</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    You are a <strong>{isSelectedRecipientThisMonth ? "Receiver" : "Sender"}</strong> this month. {isSelectedRecipientThisMonth ? "Open Confirm Receipts to confirm credits from members, then admin does Final Confirm." : "Open Recipient Details to see who to pay, then Upload Proof to send your receipt."}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={function() { setMemberTab(isSelectedRecipientThisMonth ? "confirm" : "recipient"); }} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold">
+                      Go to {isSelectedRecipientThisMonth ? "Confirm Receipts" : "Recipient Details"} &rarr;
+                    </button>
+                    <button onClick={function() { setMemberTab("ledger"); }} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700">My Ledger</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
