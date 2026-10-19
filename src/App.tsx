@@ -6,6 +6,7 @@ import ReceiptVerifier from "./components/ReceiptVerifier";
 import WhatsAppSimulator from "./components/WhatsAppSimulator";
 import MemberPortal from "./components/MemberPortal";
 import RealEstatePools from "./components/RealEstatePools";
+import ReliefAdminPanel from "./components/ReliefAdminPanel";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
 import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
@@ -1097,25 +1098,28 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
           )}
 
           {activeTab === "dashboard" && (
-            <Dashboard
-              members={members}
-              months={months}
-              currentMonthId={currentMonthId}
-              currency="₦"
-              onAddMember={handleAddMember}
-              onRemoveMember={handleRemoveMember}
-              onToggleMemberActive={handleToggleMemberActive}
-              onConfigureMonth={handleConfigureMonth}
-              onManualPayment={handleManualPayment}
-              onConfirmContribution={handleConfirmContribution}
-              onRejectContribution={handleRejectContribution}
-              onCloseRound={handleCloseRound}
+            <div className="space-y-6">
+              <ReliefAdminPanel groupId={selectedGroupId} adminEmail={adminUser?.email || null} />
+              <Dashboard
+                members={members}
+                months={months}
+                currentMonthId={currentMonthId}
+                currency="₦"
+                onAddMember={handleAddMember}
+                onRemoveMember={handleRemoveMember}
+                onToggleMemberActive={handleToggleMemberActive}
+                onConfigureMonth={handleConfigureMonth}
+                onManualPayment={handleManualPayment}
+                onConfirmContribution={handleConfirmContribution}
+                onRejectContribution={handleRejectContribution}
+                onCloseRound={handleCloseRound}
               onResetToPristine={handleResetToPristine}
               onResetBallot={handleResetBallot}
               onSetDeadline={handleSetDeadline}
               currentMonthDeadline={currentMonth?.contributionDeadline}
               onSetMemberPin={handleSetMemberPin}
             />
+            </div>
           )}
 
           {activeTab === "ballot" && (

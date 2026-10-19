@@ -33,6 +33,13 @@ export interface ReliefContribution {
   groupId: string;
   amount: number;
   date: string;
+  memberName?: string;
+  status?: "PENDING" | "CONFIRMED" | "REJECTED";
+  transactionRef?: string;
+  senderName?: string;
+  createdAt?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
 }
 
 export interface ReliefWithdrawal {
@@ -87,9 +94,9 @@ export interface ReliefBallot {
 const MIN_MEMBERSHIP_MONTHS = 3; // must have been in the fund this long before requesting
 const MAX_REQUEST_MULTIPLE = 2.5; // max request = current balance x this
 const VOTING_HOURS = 24; // how long members have to vote
-// Self-service Add / Withdraw is OFF: nothing here moves real money, so a member could type any
-// amount and credit themselves. Keep this false until contributions are confirmed by the admin
-// or by a verified payment.
+// Member-initiated contributions are now enabled as PENDING — admin confirms after bank check.
+// Direct Add/Withdraw without admin is OFF: nothing here moves real money, so a member could
+// type any amount and credit themselves. Member tabs create PENDING records; admin confirms.
 const ALLOW_SELF_SERVICE_MONEY = false;
 const REPAYMENT_MONTHS = 6; // approved payouts are repaid in this many monthly instalments
 
@@ -115,16 +122,22 @@ export default function ReliefFund({
   memberName,
   isMemberActive,
   hasPendingOwnRequest: hasPendingOwnRequestProp = false,
-}: ReliefFundProps) {
+  reliefAccountName = "Moharb Business World",
+  reliefAccountNo = "5361765947",
+  reliefBankName = "Moniepoint MFB",
+}: ReliefFundProps & { reliefAccountName?: string; reliefAccountNo?: string; reliefBankName?: string }) {
   const [reliefMember, setReliefMember] = useState<ReliefMember | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [contributeAmount, setContributeAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [showDepositSheet, setShowDepositSheet] = useState(false);
+  const [pendingDepositAmount, setPendingDepositAmount] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<
-    Array<{ type: "contribution" | "withdrawal"; amount: number; date: string }>
+    Array<{ type: "contribution" | "withdrawal"; amount: number; date: string; label?: string; status?: string }>
   >([]);
 
   const reliefMemberDocId = `${groupId}_${memberId}`;
@@ -328,18 +341,31 @@ export default function ReliefFund({
 
     const mergeAndSet = () => {
       const merged = [
-        ...contribs.map((c) => ({
-          type: "contribution" as const,
-          amount: c.amount,
-          date: c.date,
-        })),
+        ...contribs.map((c) => {
+          const status = (c as any).status as string | undefined;
+          const label =
+            status === "PENDING"
+              ? "⏳ Pending contribution"
+              : status === "REJECTED"
+              ? "✕ Rejected"
+              : "➕ Contribution";
+          return {
+            type: "contribution" as const,
+            amount: c.amount,
+            date: c.date,
+            label,
+            status: status || "CONFIRMED",
+          };
+        }),
         ...withdrawals.map((w) => ({
           type: "withdrawal" as const,
           amount: w.amount,
           date: w.date,
+          label: "➖ Withdrawal",
+          status: "CONFIRMED",
         })),
-      ].sort((a, b) => (a.date < b.date ? 1 : -1));
-      setHistory(merged);
+      ].sort((a, b) => (a.date < b.date ? 1 : -1)) as any;
+      setHistory(merged as any);
     };
 
     const unsub1 = onSnapshot(contribQuery, (snap) => {
@@ -383,46 +409,58 @@ export default function ReliefFund({
   };
 
   // ------------------------------------------------------------
-  // CONTRIBUTE
+  // CONTRIBUTE — Deposit sheet: amount -> copy account -> Payment made
   // ------------------------------------------------------------
-  const handleContribute = async () => {
+  const openDepositSheet = () => {
     const amount = parseFloat(contributeAmount);
     if (!amount || amount <= 0) {
-      setError("Enter a valid amount to contribute.");
+      setError("Enter the amount you want to deposit.");
+      return;
+    }
+    setError(null);
+    setPendingDepositAmount(amount);
+    setShowDepositSheet(true);
+  };
+
+  const copyReliefAccount = async () => {
+    const text = `${reliefBankName} - ${reliefAccountName} - ${reliefAccountNo}`.trim() || reliefAccountNo || "";
+    if (!text || text === "-" || text === "--") return;
+    try {
+      await navigator.clipboard.writeText(reliefAccountNo || text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy. Please copy the number manually.");
+    }
+  };
+
+  const confirmPaymentMade = async () => {
+    if (!pendingDepositAmount || pendingDepositAmount <= 0) {
+      setError("Amount missing. Close and try again.");
       return;
     }
     setSubmitting(true);
     setError(null);
-
     try {
-      await runTransaction(db, async (transaction) => {
-        const memberRef = doc(db, "reliefMembers", reliefMemberDocId);
-        const memberSnap = await transaction.get(memberRef);
-        if (!memberSnap.exists()) throw new Error("Relief member record not found.");
-
-        const current = memberSnap.data() as ReliefMember;
-        const newBalance = current.balance + amount;
-        const newTotal = current.totalContributed + amount;
-
-        transaction.update(memberRef, {
-          balance: newBalance,
-          totalContributed: newTotal,
-        });
-
-        const contribRef = doc(collection(db, "reliefContributions"));
-        const contribution: ReliefContribution = {
-          id: contribRef.id,
-          memberId,
-          groupId,
-          amount,
-          date: new Date().toISOString(),
-        };
-        transaction.set(contribRef, contribution);
-      });
+      const contribRef = doc(collection(db, "reliefContributions"));
+      const contribution: ReliefContribution = {
+        id: contribRef.id,
+        memberId,
+        groupId,
+        amount: pendingDepositAmount,
+        date: new Date().toISOString(),
+        memberName,
+        status: "PENDING",
+        senderName: memberName,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(contribRef, contribution);
+      setShowDepositSheet(false);
+      setPendingDepositAmount(null);
       setContributeAmount("");
     } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `reliefMembers/${reliefMemberDocId}`);
-      setError("Contribution failed. Please try again.");
+      handleFirestoreError(e, OperationType.CREATE, `reliefContributions/${memberId}`);
+      setError("Could not submit. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -693,38 +731,77 @@ export default function ReliefFund({
         </p>
       )}
 
-      {ALLOW_SELF_SERVICE_MONEY && hasPendingOwnRequest && (
+      {hasPendingOwnRequest && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-          Withdrawals are paused while your relief request is being voted on.
+          Withdrawals and new relief requests are paused while you have an open request being voted on or approved.
         </p>
       )}
 
-      {ALLOW_SELF_SERVICE_MONEY ? (
-        <>
-      {/* Contribute */}
+      {/* Contribute — Deposit: amount -> copy account -> Payment made */}
       <div className="mb-4">
         <label className="text-xs font-semibold text-slate-600 mb-1 block">
-          Contribute
+          Add to Fund <span className="font-normal text-slate-400">(tap Deposit to see account)</span>
         </label>
         <div className="flex gap-2">
           <input
             type="number"
             value={contributeAmount}
             onChange={(e) => setContributeAmount(e.target.value)}
-            placeholder="Amount"
+            placeholder="Amount you want to deposit"
             className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
           />
           <button
-            onClick={handleContribute}
+            onClick={openDepositSheet}
             disabled={submitting}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-lg transition whitespace-nowrap"
           >
-            Add
+            Deposit
           </button>
         </div>
+        <p className="text-[11px] text-slate-400 mt-1">Deposit shows the Relief account to copy. After you pay in your bank app, tap Payment made — it goes pending until admin confirms.</p>
       </div>
 
-      {/* Withdraw */}
+      {showDepositSheet && (
+        <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <p className="text-xs font-bold text-slate-800">Relief Fund account — pay here</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Amount: <strong className="text-slate-800">₦{(pendingDepositAmount ?? 0).toLocaleString()}</strong>
+          </p>
+          <div className="mt-3 bg-white border border-slate-200 rounded-lg p-3">
+            <p className="text-[11px] text-slate-400">Bank</p>
+            <p className="text-sm font-bold text-slate-800">{reliefBankName || "—"}</p>
+            <p className="text-[11px] text-slate-400 mt-2">Account name</p>
+            <p className="text-sm font-semibold text-slate-700">{reliefAccountName || "—"}</p>
+            <p className="text-[11px] text-slate-400 mt-2">Account number</p>
+            <p className="text-lg font-mono font-bold tracking-widest text-slate-900">{reliefAccountNo || "Not set — ask admin"}</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={copyReliefAccount}
+                disabled={!reliefAccountNo}
+                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-lg transition"
+              >
+                {copied ? "Copied ✓" : "Copy account number"}
+              </button>
+              <button
+                onClick={() => { setShowDepositSheet(false); }}
+                className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">After you transfer in your bank app, come back and tap below.</p>
+          </div>
+          <button
+            onClick={confirmPaymentMade}
+            disabled={submitting || !pendingDepositAmount}
+            className="mt-3 w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-lg transition"
+          >
+            {submitting ? "Submitting…" : "Payment made — notify admin"}
+          </button>
+        </div>
+      )}
+
+      {/* Withdraw — still self-service for now; will become admin-confirmed in Step 2 */}
       <div className="mb-4">
         <label className="text-xs font-semibold text-slate-600 mb-1 block">
           Withdraw
@@ -747,13 +824,6 @@ export default function ReliefFund({
           </button>
         </div>
       </div>
-        </>
-      ) : (
-        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 mb-4">
-          Contributions and withdrawals are recorded by the group admin once the payment has been
-          confirmed. Adding and withdrawing yourself is switched off for now.
-        </p>
-      )}
 
       {/* Requests awaiting this member's vote */}
       <div className="mb-4 border-t border-slate-100 pt-4">
@@ -971,11 +1041,16 @@ export default function ReliefFund({
                 className="flex justify-between text-xs text-slate-600 border-b border-slate-100 pb-1.5"
               >
                 <span>
-                  {h.type === "contribution" ? "➕ Contribution" : "➖ Withdrawal"}
+                  {(h as any).label || (h.type === "contribution" ? "➕ Contribution" : "➖ Withdrawal")}
+                  {(h as any).status === "PENDING" && <span className="ml-1 text-[10px] text-amber-600">(pending admin)</span>}
                 </span>
                 <span
                   className={
-                    h.type === "contribution" ? "text-emerald-600" : "text-rose-600"
+                    h.type === "contribution"
+                      ? (h as any).status === "PENDING"
+                        ? "text-amber-600"
+                        : "text-emerald-600"
+                      : "text-rose-600"
                   }
                 >
                   {h.type === "contribution" ? "+" : "-"}₦

@@ -42,8 +42,10 @@ Real members and real money are involved: be careful, and never delete data in t
 - House rule: always update this CLAUDE.md file whenever you change how the app works, so the next session starts with the truth.
 
 ## Relief Fund (opt-in, separate from Ajo)
-- Shown in MemberPortal via `SHOW_RELIEF_FUND = true`. Collections: reliefMembers, reliefContributions, reliefWithdrawals, reliefRequests, reliefVoteReceipts, reliefBallots.
-- It only tracks numbers: no real money moves. `ALLOW_SELF_SERVICE_MONEY = false` hides the Add and Withdraw boxes so nobody can credit themselves.
+- Shown in MemberPortal via `SHOW_RELIEF_FUND = true` (inner Relief tab). Collections: reliefMembers, reliefContributions (now with `status: PENDING/CONFIRMED/REJECTED`), reliefWithdrawals, reliefRequests, reliefVoteReceipts, reliefBallots. Admin view: `ReliefAdminPanel.tsx` at top of Admin Control Panel.
+- Contributions are now real: member types amount → Deposit → sheet shows Moniepoint MFB · Moharb Business World · 5361765947 with Copy → Payment made — notify admin creates `PENDING` contribution; admin Confirm (bank check) atomically credits balance + totalContributed and marks CONFIRMED; Reject leaves balance unchanged. Recent activity shows pending yellow until confirmed.
+- `ALLOW_SELF_SERVICE_MONEY = false` stays false in code; member money no longer via that flag — deposit flow is pending→confirm instead.
+- Separate account for Relief: currently Moniepoint 5361765947 (Moharb Business World); replace in ReliefFund.tsx defaults when a dedicated Relief account is opened for the 7-member private group.
 - `MIN_MEMBERSHIP_MONTHS` in ReliefFund.tsx must be 3. Never commit or deploy it as 0.
 - Rules: relief request up to 2.5x the member's balance, only after 3 months in the fund. Other fund members vote anonymously for 24 hours; a majority of the votes cast approves; no votes means rejected.
 - Approved payouts are meant to be repayable, interest-free advances repaid monthly, with the balance locked as security. Repayment tracking is NOT built, so an approved request blocks that member's withdrawals and new requests.
