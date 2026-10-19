@@ -55,7 +55,20 @@ export interface ReliefWithdrawal {
   confirmedBy?: string;
 }
 
-export type ReliefRequestStatus = "VOTING" | "APPROVED" | "REJECTED" | "CANCELLED";
+export type ReliefRequestStatus = "VOTING" | "APPROVED" | "REJECTED" | "CANCELLED" | "REPAID";
+
+export interface ReliefRepayment {
+  id: string;
+  requestId: string;
+  memberId: string;
+  groupId: string;
+  amount: number;
+  paidAt: string;
+  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  createdAt?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+}
 
 export interface ReliefRequest {
   id: string;
@@ -69,12 +82,17 @@ export interface ReliefRequest {
   votingDeadline: string;
   balanceAtRequest: number;
   repaymentMonths: number;
+  chosenRepayMonths?: number;
+  monthlyRepayPreview?: number;
+  remainingRepayAmount?: number;
+  paidInstalments?: number;
   // filled in when voting closes
   settledAt?: string;
   yesVotes?: number;
   noVotes?: number;
   votesCast?: number;
   settleNote?: string;
+  repaidAt?: string;
 }
 
 // Anonymous voting is split in two on purpose:
@@ -104,6 +122,85 @@ const VOTING_HOURS = 24; // how long members have to vote
 // type any amount and credit themselves. Member tabs create PENDING records; admin confirms.
 const ALLOW_SELF_SERVICE_MONEY = false;
 const REPAYMENT_MONTHS = 6; // approved payouts are repaid in this many monthly instalments
+
+
+function RequestReliefForm(props: {
+  maxAmount: number;
+  balance: number;
+  reliefMember: ReliefMember | null;
+  requestAmount: string;
+  setRequestAmount: (v: string) => void;
+  requestReason: string;
+  setRequestReason: (v: string) => void;
+  requestSubmitting: boolean;
+  chosenMonths: number;
+  setChosenMonths: (n: number) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const amount = parseFloat(props.requestAmount) || 0;
+  const elapsed = props.reliefMember ? (() => {
+    const j = new Date(props.reliefMember!.joinedAt);
+    const now = new Date();
+    return Math.max(1, (now.getFullYear() - j.getFullYear()) * 12 + (now.getMonth() - j.getMonth()) + 1);
+  })() : 1;
+  const avgMonthly = props.reliefMember && props.reliefMember.totalContributed > 0 ? Math.ceil(props.reliefMember.totalContributed / elapsed) : 0;
+  const halfNormal = Math.ceil(avgMonthly / 2);
+  const loanPart = amount > 0 ? Math.ceil(amount / props.chosenMonths) : 0;
+  const blended = halfNormal + loanPart;
+  return (
+    <div className="space-y-2 bg-slate-50 rounded-lg p-3">
+      <input
+        type="number"
+        value={props.requestAmount}
+        onChange={(e) => props.setRequestAmount(e.target.value)}
+        placeholder={`Amount (up to \u20a6${props.maxAmount.toLocaleString()})`}
+        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+      />
+      <textarea
+        value={props.requestReason}
+        onChange={(e) => props.setRequestReason(e.target.value)}
+        placeholder="Why do you need relief? (e.g. hospital bill)"
+        rows={3}
+        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+      />
+      <div className="bg-white border border-slate-200 rounded-lg p-3">
+        <label className="text-[11px] font-bold text-slate-600 block">Repay over how many months? (max 6)</label>
+        <div className="flex items-center gap-2 mt-1">
+          <input type="range" min={1} max={6} value={props.chosenMonths} onChange={(e) => props.setChosenMonths(parseInt(e.target.value, 10))} className="flex-1" />
+          <span className="text-sm font-bold text-slate-800 w-10 text-center">{props.chosenMonths}</span>
+        </div>
+        {amount > 0 ? (
+          <p className="text-[11px] text-slate-600 mt-2">
+            Preview: <strong>\u20a6{blended.toLocaleString()}/mo</strong> = half your usual \u20a6{halfNormal.toLocaleString()} + loan \u20a6{loanPart.toLocaleString()} (\u20a6{amount.toLocaleString()} \u00f7 {props.chosenMonths})
+            {avgMonthly === 0 && <span className="text-slate-400"> \u00b7 no history yet, so half is \u20a60</span>}
+          </p>
+        ) : (
+          <p className="text-[11px] text-slate-400 mt-2">Enter an amount to see your monthly preview. Hard ceiling is 6 months.</p>
+        )}
+        <p className="text-[10px] text-slate-400 mt-1">Interest-free. Your Relief balance stays locked until fully repaid.</p>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        If approved, you repay the blended amount each month and your balance stays locked as security. Members vote for {VOTING_HOURS} hours.
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={props.onSubmit}
+          disabled={props.requestSubmitting}
+          className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-lg transition"
+        >
+          {props.requestSubmitting ? "Submitting\u2026" : "Submit request"}
+        </button>
+        <button
+          onClick={props.onCancel}
+          className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 // PROPS
@@ -309,6 +406,9 @@ export default function ReliefFund({
     hasPendingOwnRequestProp ||
     myRequests.some((r) => r.status === "VOTING" || r.status === "APPROVED");
 
+  const activeAdvance = myRequests.find((r) => r.status === "APPROVED") || null;
+  const activeAdvanceId = activeAdvance?.id || null;
+
   // Listen for this member's relief fund status in real time
   useEffect(() => {
     const ref = doc(db, "reliefMembers", reliefMemberDocId);
@@ -396,6 +496,49 @@ export default function ReliefFund({
       unsub2();
     };
   }, [reliefMember, groupId, memberId]);
+
+  const [repayments, setRepayments] = useState<ReliefRepayment[]>([]);
+  const [repaySubmitting, setRepaySubmitting] = useState(false);
+  const [repayError, setRepayError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeAdvanceId) { setRepayments([]); return; }
+    const q = query(collection(db, "reliefRepayments"), where("requestId", "==", activeAdvanceId));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => d.data() as ReliefRepayment);
+      list.sort((a, b) => (a.createdAt || a.paidAt) < (b.createdAt || b.paidAt) ? 1 : -1);
+      setRepayments(list);
+    }, (err) => console.error("Repayments listener error:", err));
+    return () => unsub();
+  }, [activeAdvanceId]);
+
+  const confirmedRepaid = repayments.filter((x) => x.status === "CONFIRMED").reduce((s, x) => s + x.amount, 0);
+  const advanceTotal = activeAdvance?.amount ?? 0;
+  const advanceChosenMonths = activeAdvance?.chosenRepayMonths ?? activeAdvance?.repaymentMonths ?? REPAYMENT_MONTHS;
+  const advanceMonthlyPreview = activeAdvance?.monthlyRepayPreview ?? (advanceTotal > 0 ? Math.ceil(advanceTotal / advanceChosenMonths) : 0);
+  const advanceRemaining = Math.max(0, advanceTotal - confirmedRepaid);
+  const advancePaidCount = activeAdvance?.paidInstalments ?? repayments.filter((x) => x.status === "CONFIRMED").length;
+  const advanceFullyRepaid = activeAdvance ? advanceRemaining === 0 && advanceTotal > 0 : false;
+  const advanceInstalment = advanceRemaining > 0 ? Math.min(advanceMonthlyPreview, advanceRemaining) : 0;
+
+  const handleMakeRepayment = async () => {
+    if (!activeAdvance) return;
+    setRepayError(null);
+    if (advanceFullyRepaid) { setRepayError("This advance is already fully repaid."); return; }
+    if (repayments.some((x) => x.status === "PENDING")) { setRepayError("You have a repayment awaiting admin confirmation."); return; }
+    const amount = Math.min(advanceInstalment, advanceRemaining);
+    if (amount <= 0) return;
+    setRepaySubmitting(true);
+    try {
+      const ref = doc(collection(db, "reliefRepayments"));
+      const payload: ReliefRepayment = {
+        id: ref.id, requestId: activeAdvance.id, memberId, groupId, amount,
+        paidAt: new Date().toISOString(), status: "PENDING", createdAt: new Date().toISOString(),
+      };
+      await setDoc(ref, payload);
+    } catch (e) { handleFirestoreError(e, OperationType.CREATE, `reliefRepayments/${activeAdvance.id}`); setRepayError("Could not submit repayment. Please try again."); }
+    finally { setRepaySubmitting(false); }
+  };
 
   // ------------------------------------------------------------
   // OPT IN
@@ -621,6 +764,14 @@ export default function ReliefFund({
         }
 
         const now = new Date();
+        const monthsChosen = Math.max(1, Math.min(REPAYMENT_MONTHS, chosenRepayMonths || REPAYMENT_MONTHS));
+        // avg monthly from history for preview: total / elapsed months
+        const joined = new Date(current.joinedAt);
+        const elapsedMonths = Math.max(1, (now.getFullYear() - joined.getFullYear()) * 12 + (now.getMonth() - joined.getMonth()) + 1);
+        const avgMonthly = current.totalContributed > 0 ? Math.ceil(current.totalContributed / elapsedMonths) : 0;
+        const halfNormal = Math.ceil(avgMonthly / 2);
+        const loanPart = Math.ceil(amount / monthsChosen);
+        const blendedMonthly = halfNormal + loanPart;
         const reqRef = doc(collection(db, "reliefRequests"));
         const request: ReliefRequest = {
           id: reqRef.id,
@@ -635,7 +786,11 @@ export default function ReliefFund({
             now.getTime() + VOTING_HOURS * 60 * 60 * 1000
           ).toISOString(),
           balanceAtRequest: current.balance,
-          repaymentMonths: REPAYMENT_MONTHS,
+          repaymentMonths: monthsChosen,
+          chosenRepayMonths: monthsChosen,
+          monthlyRepayPreview: blendedMonthly,
+          remainingRepayAmount: amount,
+          paidInstalments: 0,
         };
         transaction.set(reqRef, request);
       });

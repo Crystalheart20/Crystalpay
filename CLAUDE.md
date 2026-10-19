@@ -49,7 +49,7 @@ Real members and real money are involved: be careful, and never delete data in t
 - Separate account for Relief: currently Moniepoint 5361765947 (Moharb Business World); replace in ReliefFund.tsx defaults when a dedicated Relief account is opened for the 7-member private group.
 - `MIN_MEMBERSHIP_MONTHS` in ReliefFund.tsx must be 3. Never commit or deploy it as 0.
 - Rules: relief request up to 2.5x the member's balance, only after 3 months in the fund. Other fund members vote anonymously for 24 hours; a majority of the votes cast approves; no votes means rejected.
-- Approved payouts are meant to be repayable, interest-free advances repaid monthly, with the balance locked as security. Repayment tracking is NOT built, so an approved request blocks that member's withdrawals and new requests.
+- Approved payouts are repayable, interest-free advances. Blended repayment (done 2026-10-19): borrower keeps contributing ~½ their usual amount + a slice of the loan spread over a chosen 1–6 months (ceiling hard 6). Preview before submit: `Monthly = half usual + loan ÷ months` (e.g. usual ₦20k → half ₦10k + ₦60k÷4 → ₦25k/mo). New collections: `reliefRepayments` (PENDING→CONFIRMED per month, member taps I repaid → admin Confirms bank at Moniepoint 5361765947). Request stores `chosenRepayMonths / monthlyRepayPreview / remainingRepayAmount / paidInstalments`; Approved shows Paid N/6 and remaining; Confirm advances count and flips to REPAID when done. Until REPAID, balance stays locked so no new withdrawals/requests.
 
 ## Known gaps / next
 1. Admin-confirmed contributions: DONE 2026-10-17 — see "Contributions (winner-then-admin flow)" above.
