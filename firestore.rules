@@ -1,57 +1,75 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Core groups and contribution models
+
+    // Helper: any Firebase-signed-in user (anonymous counts — your app signs everyone in automatically)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ——— Core Ajo data ———
+    // Everyone in the app is signed in (anonymous or email), so this blocks outside scrapers
+    // while keeping Admin / Member portals working as before.
     match /groups/{groupId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /members/{memberId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /months/{monthId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
-    // Developer Partners: Only authenticated admins can write; anyone can read.
+    // ——— Relief Fund ———
+    match /reliefMembers/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefContributions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefWithdrawals/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefRequests/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefVoteReceipts/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefBallots/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /reliefRepayments/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ——— Real Estate Pools ———
     match /developer_partners/{partnerId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
-      // Enable baseline prototype access without auth
-      allow write: if request.auth == null;
+      allow read, write: if isSignedIn();
     }
-    
-    // Properties: Only authenticated admins can write; anyone can read.
     match /properties/{propertyId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
-      // Enable baseline prototype access without auth
-      allow write: if request.auth == null;
+      allow read, write: if isSignedIn();
     }
-    
-    // Property Milestones: Anyone can read; admins can write.
     match /property_milestones/{milestoneId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
-      // Enable baseline prototype access without auth
-      allow write: if request.auth == null;
+      allow read, write: if isSignedIn();
     }
-
-    // Real Estate Pools: Groups/members can access pooled contracts
     match /real_estate_pools/{poolId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
+    }
+    match /pool_contributions/{contributionId} {
+      allow read, write: if isSignedIn();
+    }
+    match /pool_disputes/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /ownership_certificates/{docId} {
+      allow read, write: if isSignedIn();
     }
 
-    // Pool Contributions: Members can read/write their own; admins can view all.
-    match /pool_contributions/{contributionId} {
-      allow read: if request.auth == null || (resource == null || resource.data.memberId == request.auth.uid || request.auth.token.admin == true);
-      allow create, update: if request.auth == null || request.resource.data.memberId == request.auth.uid;
-      allow delete: if request.auth == null || request.auth.token.admin == true;
-    }
-    
-    // Fallback/all other collections
+    // ——— Everything else: deny ———
+    // Old file had `allow read, write: if true` here which opened every future collection.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

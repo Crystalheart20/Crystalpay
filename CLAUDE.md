@@ -16,7 +16,7 @@ Real members and real money are involved: be careful, and never delete data in t
 - Components in `src/components/`: Dashboard (admin), BallotWheel, ReceiptVerifier, WhatsAppSimulator, MemberPortal, RealEstatePools, AdminLogin, ReliefFund.
 - Server: `server.ts` (Express). It serves the built site and two Gemini endpoints: `/api/verify-receipt` and `/api/generate-summary`.
 - Data: Firebase Firestore and Firebase Auth. Project `concentrated-drummer-7wh20`. The Firestore database is NOT the default one: its id is `ai-studio-8b55aa2d-6f9d-411c-92b7-1ca158726564` (see `src/firebase.ts`).
-- Security rules are edited and published in the Firebase console. The `firestore.rules` file in the repo may be out of date.
+- Security rules: `firestore.rules` in repo is the source of truth (copy-paste to Firebase console → Firestore → Rules to publish). All collections require `request.auth != null` (any signed-in session — anonymous counts, so Member + Admin portals keep working) and the catch-all is `if false` (deny by default). See `src/firebase.ts` anonymous sign-in.
 - The separate `ajo-app` repo (Next.js/Supabase) is an unfinished scaffold. Ignore it.
 
 ## Run, deploy, back up
@@ -54,7 +54,7 @@ Real members and real money are involved: be careful, and never delete data in t
 ## Known gaps / next
 1. Admin-confirmed contributions: DONE 2026-10-17 — see "Contributions (winner-then-admin flow)" above.
 2. Repayment tracking for approved advances: DONE 2026-10-19 — blended repayment + 1–6 choice + pending confirm above.
-3. Firestore rules tied to individual members. Members share anonymous sessions, so rules cannot tell members apart and the relief collections are loosely protected.
+3. Firestore rules: DONE 2026-10-19 — `firestore.rules` now requires `request.auth != null` for every collection (anonymous sign-in counts) and denies the catch-all (`if false`). This blocks unauthenticated scrapers; per-member ownership checks are a later step when members get distinct Firebase Auth UIDs.
 4. A separate account for pooled money: private 7-member group uses dedicated Moniepoint Relief account (see Relief Fund above); legal check only before going public.
 5. The receipt screen shows the expected amount as "audited amount" even on a flagged receipt: DONE 2026-10-19 — flagged now shows Detected (not approved) + Expected with amber and a Flagged banner; only APPROVED shows Audited Amount.
 6. A "joins next cycle" flag, so a member can be approved without entering the current draw: DONE 2026-10-19 — Member.eligibleFromRoundId (e.g. 2026-07) excludes from eligibleMembers until that round; Dashboard Pending shows dialog to join next cycle, Active pill shows joins tag and remove.
