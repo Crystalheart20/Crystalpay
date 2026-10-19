@@ -43,8 +43,9 @@ Real members and real money are involved: be careful, and never delete data in t
 
 ## Relief Fund (opt-in, separate from Ajo)
 - Shown in MemberPortal via `SHOW_RELIEF_FUND = true` (inner Relief tab). Collections: reliefMembers, reliefContributions (now with `status: PENDING/CONFIRMED/REJECTED`), reliefWithdrawals, reliefRequests, reliefVoteReceipts, reliefBallots. Admin view: `ReliefAdminPanel.tsx` at top of Admin Control Panel.
-- Contributions are now real: member types amount → Deposit → sheet shows Moniepoint MFB · Moharb Business World · 5361765947 with Copy → Payment made — notify admin creates `PENDING` contribution; admin Confirm (bank check) atomically credits balance + totalContributed and marks CONFIRMED; Reject leaves balance unchanged. Recent activity shows pending yellow until confirmed.
-- `ALLOW_SELF_SERVICE_MONEY = false` stays false in code; member money no longer via that flag — deposit flow is pending→confirm instead.
+- Deposits are now real: member types amount → Deposit → sheet shows Moniepoint MFB · Moharb Business World · 5361765947 with Copy → Payment made — notify admin creates `PENDING` `reliefContributions`; admin Confirm (bank check) in `ReliefAdminPanel` atomically credits `balance` + `totalContributed` and marks `CONFIRMED`; Reject leaves balance unchanged. Recent activity shows pending yellow until confirmed.
+- Withdrawals are now real: member taps Request Withdrawal → creates `PENDING` `reliefWithdrawals` (balance untouched); admin transfers from Moniepoint 5361765947 to member's bank then taps Confirm sent → transactionally debits `balance` and marks `CONFIRMED`; Reject leaves balance. History shows `⏳ Pending withdrawal (pending admin)` in amber until confirmed.
+- `ALLOW_SELF_SERVICE_MONEY = false` stays false; money moves via deposit/withdrawal pending→confirm flows above, not via that flag.
 - Separate account for Relief: currently Moniepoint 5361765947 (Moharb Business World); replace in ReliefFund.tsx defaults when a dedicated Relief account is opened for the 7-member private group.
 - `MIN_MEMBERSHIP_MONTHS` in ReliefFund.tsx must be 3. Never commit or deploy it as 0.
 - Rules: relief request up to 2.5x the member's balance, only after 3 months in the fund. Other fund members vote anonymously for 24 hours; a majority of the votes cast approves; no votes means rejected.

@@ -48,6 +48,11 @@ export interface ReliefWithdrawal {
   groupId: string;
   amount: number;
   date: string;
+  memberName?: string;
+  status?: "PENDING" | "CONFIRMED" | "REJECTED";
+  createdAt?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
 }
 
 export type ReliefRequestStatus = "VOTING" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -357,13 +362,22 @@ export default function ReliefFund({
             status: status || "CONFIRMED",
           };
         }),
-        ...withdrawals.map((w) => ({
-          type: "withdrawal" as const,
-          amount: w.amount,
-          date: w.date,
-          label: "➖ Withdrawal",
-          status: "CONFIRMED",
-        })),
+        ...withdrawals.map((w) => {
+          const status = (w as any).status as string | undefined;
+          const label =
+            status === "PENDING"
+              ? "⏳ Pending withdrawal"
+              : status === "REJECTED"
+              ? "✕ Rejected withdrawal"
+              : "➖ Withdrawal";
+          return {
+            type: "withdrawal" as const,
+            amount: w.amount,
+            date: w.date,
+            label,
+            status: status || "CONFIRMED",
+          };
+        }),
       ].sort((a, b) => (a.date < b.date ? 1 : -1)) as any;
       setHistory(merged as any);
     };
@@ -467,7 +481,7 @@ export default function ReliefFund({
   };
 
   // ------------------------------------------------------------
-  // WITHDRAW
+  // WITHDRAW — Step 2: member creates PENDING, admin transfers then confirms
   // ------------------------------------------------------------
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
@@ -476,9 +490,7 @@ export default function ReliefFund({
       return;
     }
     if (hasPendingOwnRequest) {
-      setError(
-        "You can't withdraw while you have an active relief request awaiting a vote."
-      );
+      setError("You can't withdraw while you have an active relief request awaiting a vote.");
       return;
     }
     if (!reliefMember || amount > reliefMember.balance) {
@@ -490,34 +502,23 @@ export default function ReliefFund({
     setError(null);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const memberRef = doc(db, "reliefMembers", reliefMemberDocId);
-        const memberSnap = await transaction.get(memberRef);
-        if (!memberSnap.exists()) throw new Error("Relief member record not found.");
-
-        const current = memberSnap.data() as ReliefMember;
-        if (amount > current.balance) {
-          throw new Error("Insufficient balance.");
-        }
-
-        transaction.update(memberRef, {
-          balance: current.balance - amount,
-        });
-
-        const withdrawRef = doc(collection(db, "reliefWithdrawals"));
-        const withdrawal: ReliefWithdrawal = {
-          id: withdrawRef.id,
-          memberId,
-          groupId,
-          amount,
-          date: new Date().toISOString(),
-        };
-        transaction.set(withdrawRef, withdrawal);
-      });
+      const withdrawRef = doc(collection(db, "reliefWithdrawals"));
+      const withdrawal: ReliefWithdrawal = {
+        id: withdrawRef.id,
+        memberId,
+        groupId,
+        amount,
+        date: new Date().toISOString(),
+        memberName,
+        status: "PENDING",
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(withdrawRef, withdrawal);
       setWithdrawAmount("");
+      setError(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `reliefMembers/${reliefMemberDocId}`);
-      setError("Withdrawal failed. Please try again.");
+      handleFirestoreError(e, OperationType.CREATE, `reliefWithdrawals/${memberId}`);
+      setError("Could not request withdrawal. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -801,17 +802,17 @@ export default function ReliefFund({
         </div>
       )}
 
-      {/* Withdraw — still self-service for now; will become admin-confirmed in Step 2 */}
+      {/* Withdraw — member creates PENDING, admin transfers then confirms */}
       <div className="mb-4">
         <label className="text-xs font-semibold text-slate-600 mb-1 block">
-          Withdraw
+          Request Withdrawal <span className="font-normal text-slate-400">(admin pays to your bank, then confirms)</span>
         </label>
         <div className="flex gap-2">
           <input
             type="number"
             value={withdrawAmount}
             onChange={(e) => setWithdrawAmount(e.target.value)}
-            placeholder="Amount"
+            placeholder="Amount to withdraw to your bank"
             disabled={hasPendingOwnRequest}
             className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400"
           />
@@ -820,9 +821,10 @@ export default function ReliefFund({
             disabled={submitting || hasPendingOwnRequest}
             className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-lg transition whitespace-nowrap"
           >
-            Withdraw
+            Request Withdrawal
           </button>
         </div>
+        <p className="text-[11px] text-slate-400 mt-1">You will be paid to your registered bank account; it shows as pending until admin confirms the transfer.</p>
       </div>
 
       {/* Requests awaiting this member's vote */}
@@ -1046,10 +1048,10 @@ export default function ReliefFund({
                 </span>
                 <span
                   className={
-                    h.type === "contribution"
-                      ? (h as any).status === "PENDING"
-                        ? "text-amber-600"
-                        : "text-emerald-600"
+                    (h as any).status === "PENDING"
+                      ? "text-amber-600"
+                      : h.type === "contribution"
+                      ? "text-emerald-600"
                       : "text-rose-600"
                   }
                 >
