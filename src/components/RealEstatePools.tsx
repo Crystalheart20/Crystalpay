@@ -21,7 +21,7 @@ import {
   ChevronRight, 
   Users 
 } from "lucide-react";
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { 
   Member, 
@@ -38,9 +38,10 @@ interface RealEstatePoolsProps {
   members: Member[];
   selectedGroupId: string;
   isMemberOnlyUrl: boolean;
+  canManage?: boolean; // platform admin / group head — may create pools and verify contributions
 }
 
-export default function RealEstatePools({ members, selectedGroupId, isMemberOnlyUrl }: RealEstatePoolsProps) {
+export default function RealEstatePools({ members, selectedGroupId, isMemberOnlyUrl, canManage = false }: RealEstatePoolsProps) {
   // Mode toggle within this tab (for testing admin workflows if not on member only URL)
   const [isAdminView, setIsAdminView] = useState(!isMemberOnlyUrl);
 
@@ -111,29 +112,43 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
       setMilestones(list);
     });
 
-    const unsubPools = onSnapshot(collection(db, "real_estate_pools"), (snap) => {
-      const list: RealEstatePool[] = [];
-      snap.forEach(d => list.push(d.data() as RealEstatePool));
-      setPools(list.filter(p => p.groupId === selectedGroupId));
-    });
+    // Pools and everything hanging off them belong to one group, so the
+    // queries ask for that group by name.
+    const unsubPools = onSnapshot(
+      query(collection(db, "real_estate_pools"), where("groupId", "==", selectedGroupId)),
+      (snap) => {
+        const list: RealEstatePool[] = [];
+        snap.forEach(d => list.push(d.data() as RealEstatePool));
+        setPools(list);
+      }
+    );
 
-    const unsubContrib = onSnapshot(collection(db, "pool_contributions"), (snap) => {
-      const list: PoolContribution[] = [];
-      snap.forEach(d => list.push(d.data() as PoolContribution));
-      setContributions(list);
-    });
+    const unsubContrib = onSnapshot(
+      query(collection(db, "pool_contributions"), where("groupId", "==", selectedGroupId)),
+      (snap) => {
+        const list: PoolContribution[] = [];
+        snap.forEach(d => list.push(d.data() as PoolContribution));
+        setContributions(list);
+      }
+    );
 
-    const unsubDisputes = onSnapshot(collection(db, "pool_disputes"), (snap) => {
-      const list: PoolDispute[] = [];
-      snap.forEach(d => list.push(d.data() as PoolDispute));
-      setDisputes(list);
-    });
+    const unsubDisputes = onSnapshot(
+      query(collection(db, "pool_disputes"), where("groupId", "==", selectedGroupId)),
+      (snap) => {
+        const list: PoolDispute[] = [];
+        snap.forEach(d => list.push(d.data() as PoolDispute));
+        setDisputes(list);
+      }
+    );
 
-    const unsubCert = onSnapshot(collection(db, "ownership_certificates"), (snap) => {
-      const list: OwnershipCertificate[] = [];
-      snap.forEach(d => list.push(d.data() as OwnershipCertificate));
-      setCertificates(list);
-    });
+    const unsubCert = onSnapshot(
+      query(collection(db, "ownership_certificates"), where("groupId", "==", selectedGroupId)),
+      (snap) => {
+        const list: OwnershipCertificate[] = [];
+        snap.forEach(d => list.push(d.data() as OwnershipCertificate));
+        setCertificates(list);
+      }
+    );
 
     return () => {
       unsubPartners();
@@ -252,6 +267,7 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
 
   // Ensure default active pool for Vista Heights exists in this group for demo
   useEffect(() => {
+    if (!canManage) return;
     if (pools.length === 0 && !isSubmitting && properties.length > 0) {
       const activeProp = properties.find(p => p.id === "prop-lekki-offplan") || properties[0];
       if (activeProp) {
@@ -275,6 +291,7 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
             const c1: PoolContribution = {
               id: `contrib-seed-1-${selectedGroupId}`,
               poolId,
+              groupId: selectedGroupId,
               memberId: members[0].id,
               amount: Math.floor(activeProp.totalPrice * 0.15), // 15% contribution
               currency: activeProp.currency,
@@ -284,6 +301,7 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
             const c2: PoolContribution = {
               id: `contrib-seed-2-${selectedGroupId}`,
               poolId,
+              groupId: selectedGroupId,
               memberId: members[1].id,
               amount: Math.floor(activeProp.totalPrice * 0.20), // 20% contribution
               currency: activeProp.currency,
@@ -297,7 +315,7 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
         seedPool().catch(console.error);
       }
     }
-  }, [pools, properties, members, selectedGroupId]);
+  }, [pools, properties, members, selectedGroupId, canManage]);
 
   // Handler: Add Developer Partner
   const handleAddPartner = async (e: React.FormEvent) => {
@@ -439,10 +457,11 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
     const contribution: PoolContribution = {
       id: newId,
       poolId,
+      groupId: selectedGroupId,
       memberId: contribMemberId,
       amount: Number(contribAmount),
       currency: activePool.currency,
-      verified: true, // Auto-verified in prototype simulation
+      verified: canManage, // members contribute unverified — the head verifies after the bank check
       date: new Date().toISOString()
     };
     try {
@@ -464,6 +483,7 @@ export default function RealEstatePools({ members, selectedGroupId, isMemberOnly
     const dispute: PoolDispute = {
       id: newId,
       poolId,
+      groupId: selectedGroupId,
       memberId: members[0]?.id || "anonymous",
       title: disputeTitle,
       description: disputeDesc,

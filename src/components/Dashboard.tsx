@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Member, ContributionMonth, PaymentLog } from "../types";
+import { Member, ContributionMonth, PaymentLog, GroupRole, GroupRoleDoc } from "../types";
 import { Users, Coins, ClipboardList, Send, Calendar, CheckCircle, Clock, Plus, Trash2, Edit2, AlertCircle, Sparkles, Copy, Check, ChevronRight, RotateCcw, Lock } from "lucide-react";
 
 interface DashboardProps {
@@ -20,6 +20,8 @@ interface DashboardProps {
   onCloseRound: () => void;
   onResetToPristine?: () => void;
   onResetBallot?: () => void;
+  groupHeads?: GroupRoleDoc[]; // role documents for this group (operator only)
+  onSetMemberRole?: (member: Member, role: GroupRole) => void; // make/stop a group head
 }
 
 export default function Dashboard({
@@ -39,7 +41,9 @@ export default function Dashboard({
   onRejectContribution,
   onCloseRound,
   onResetToPristine,
-  onResetBallot
+  onResetBallot,
+  groupHeads,
+  onSetMemberRole
 }: DashboardProps) {
   // Member Registration State
   const [newMemberName, setNewMemberName] = useState("");
@@ -59,6 +63,7 @@ export default function Dashboard({
   const [currencyInput, setCurrencyInput] = useState("NGN");
 
   const currentMonth = months.find(m => m.id === currentMonthId);
+  const headMemberIds = new Set((groupHeads || []).filter(h => h.role === "HEAD").map(h => h.memberId));
 
   React.useEffect(() => {
     if (currentMonth) {
@@ -667,6 +672,32 @@ export default function Dashboard({
                               </button>
                             )}
                           </>
+                        )}
+                        {onSetMemberRole && (
+                          headMemberIds.has(m.id) ? (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Stop ${m.name} being the group head? They stay a member of the group.`)) {
+                                  onSetMemberRole(m, "MEMBER");
+                                }
+                              }}
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 bg-indigo-600 text-white hover:bg-indigo-700"
+                              title="Group head — click to step down"
+                            >
+                              Head ✕
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => onSetMemberRole(m, "HEAD")}
+                              disabled={!m.authUid}
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded transition mr-1 bg-slate-100 text-slate-500 hover:bg-indigo-100 disabled:opacity-40"
+                              title={m.authUid
+                                ? "Make this member the group head"
+                                : "This member has no email login yet — ask them to register first"}
+                            >
+                              Make head
+                            </button>
+                          )
                         )}
                         <button
                           onClick={() => onRemoveMember(m.id)}

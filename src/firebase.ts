@@ -10,7 +10,17 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
-signInAnonymously(auth).catch((err) => console.error("Anonymous sign-in failed:", err));
+// Only fall back to an anonymous session when nobody is signed in. Signing in
+// anonymously unconditionally would replace a member's email login with a fresh
+// anonymous account on every page reload, and the Firestore rules would then
+// refuse everything that member tries to write.
+auth
+  .authStateReady()
+  .then(() => {
+    if (auth.currentUser) return;
+    return signInAnonymously(auth);
+  })
+  .catch((err) => console.error("Anonymous sign-in failed:", err));
 
 export enum OperationType {
   CREATE = "create",

@@ -21,9 +21,7 @@ export default function ReliefAdminPanel({ groupId, adminEmail }: Props) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   useEffect(() => {
-    const q = groupId
-      ? query(collection(db, "reliefContributions"), where("groupId", "==", groupId), where("status", "==", "PENDING"))
-      : query(collection(db, "reliefContributions"), where("status", "==", "PENDING"));
+    const q = query(collection(db, "reliefContributions"), where("groupId", "==", groupId || "default"), where("status", "==", "PENDING"));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -37,9 +35,7 @@ export default function ReliefAdminPanel({ groupId, adminEmail }: Props) {
   }, [groupId]);
 
   useEffect(() => {
-    const q = groupId
-      ? query(collection(db, "reliefWithdrawals"), where("groupId", "==", groupId), where("status", "==", "PENDING"))
-      : query(collection(db, "reliefWithdrawals"), where("status", "==", "PENDING"));
+    const q = query(collection(db, "reliefWithdrawals"), where("groupId", "==", groupId || "default"), where("status", "==", "PENDING"));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -53,7 +49,7 @@ export default function ReliefAdminPanel({ groupId, adminEmail }: Props) {
   }, [groupId]);
 
   useEffect(() => {
-    const q = query(collection(db, "reliefRepayments"), where("status", "==", "PENDING"));
+    const q = query(collection(db, "reliefRepayments"), where("groupId", "==", groupId || "default"), where("status", "==", "PENDING"));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -74,9 +70,7 @@ export default function ReliefAdminPanel({ groupId, adminEmail }: Props) {
 
   // ---- Overall fund monitor: live totals for this group ----
   useEffect(() => {
-    const q = groupId
-      ? query(collection(db, "reliefMembers"), where("groupId", "==", groupId))
-      : collection(db, "reliefMembers") as any;
+    const q = query(collection(db, "reliefMembers"), where("groupId", "==", groupId || "default"));
     const unsub = onSnapshot(
       q as any,
       (snap: any) => setFundMembers(snap.docs.map((d: any) => d.data() as ReliefMember)),
@@ -86,9 +80,7 @@ export default function ReliefAdminPanel({ groupId, adminEmail }: Props) {
   }, [groupId]);
 
   useEffect(() => {
-    const q = groupId
-      ? query(collection(db, "reliefRequests"), where("groupId", "==", groupId))
-      : collection(db, "reliefRequests") as any;
+    const q = query(collection(db, "reliefRequests"), where("groupId", "==", groupId || "default"));
     const unsub = onSnapshot(
       q as any,
       (snap: any) => {

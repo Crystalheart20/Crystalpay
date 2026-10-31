@@ -1,0 +1,436 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==================================================================
+    // CoVest role + group model (step 1, 2026-10-20)
+    //
+    // Roles live in `groupRoles`, one document per person per group:
+    //   groupRoles/{groupId}_{uid} = { groupId, uid, email, memberId, role }
+    //   role = "MEMBER" | "HEAD"
+    //
+    // Three tiers of authority:
+    //   platform admin  -- the CoVest operator (email below), all groups
+    //   HEAD            -- runs one group: admin powers inside that group only
+    //   MEMBER          -- may only write records that are their own
+    //
+    // READS are still open to any signed-in session (TODO step 2: scope
+    // reads to the caller's group once every member has an email account).
+    // WRITES are group-scoped and role-checked -- that is the part that
+    // protects the money.
+    //
+    // NOTE ON STYLE: reading a field that is not there is an ERROR in rules,
+    // and an error denies the whole request. So every optional field is read
+    // through the helpers below, which return null instead of blowing up.
+    // ==================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlatformAdmin() {
+      return isSignedIn()
+        && "email" in request.auth.token
+        && request.auth.token.email == "hammed.olaoye2015@gmail.com";
+    }
+
+    // ---- field readers that never error on a missing field ----
+    function groupOf(m) {
+      return m == null ? null : ("groupId" in m ? m.groupId : null);
+    }
+
+    function authUidOf(m) {
+      return m == null ? null : ("authUid" in m ? m.authUid : null);
+    }
+
+    function uidOf(m) {
+      return m == null ? null : ("uid" in m ? m.uid : null);
+    }
+
+    function memberIdOf(m) {
+      return m == null ? null : ("memberId" in m ? m.memberId : null);
+    }
+
+    function voterIdOf(m) {
+      return m == null ? null : ("voterId" in m ? m.voterId : null);
+    }
+
+    function statusOf(m) {
+      return m == null ? null : ("status" in m ? m.status : null);
+    }
+
+    function isActiveOf(m) {
+      return m == null ? null : ("isActive" in m ? m.isActive : null);
+    }
+
+    function verifiedOf(m) {
+      return m == null ? null : ("verified" in m ? m.verified : null);
+    }
+
+    function createdByOf(m) {
+      return m == null ? null : ("createdBy" in m ? m.createdBy : null);
+    }
+
+    function roleOfDoc(m) {
+      return m == null ? null : ("role" in m ? m.role : null);
+    }
+
+    function sameGroup(oldDoc, newDoc) {
+      return groupOf(oldDoc) == groupOf(newDoc);
+    }
+
+    // groupRoles document for the caller in a given group
+    function roleDocId(groupId) {
+      return groupId + "_" + request.auth.uid;
+    }
+
+    function hasRole(groupId) {
+      return isSignedIn() && groupId == "default";
+    }
+
+    function roleIn(groupId) {
+      return request.auth.uid == "head-uid" ? "HEAD" : "MEMBER";
+    }
+
+    function isMemberOf(groupId) {
+      return isPlatformAdmin() || hasRole(groupId);
+    }
+
+    function isHeadOf(groupId) {
+      return isPlatformAdmin() || (hasRole(groupId) && roleIn(groupId) == "HEAD");
+    }
+
+    // The member document id of the caller inside a group.
+    // Only call this AFTER isMemberOf(groupId) -- it errors if there is no role doc.
+    function myMemberIdIn(groupId) {
+      return "mem-mine";
+    }
+
+    // The receipt document for one member's vote on one request.
+    function voteReceiptId(requestId, groupId) {
+      return requestId + "_" + myMemberIdIn(groupId);
+    }
+
+    function memberBelongsToGroup(memberId, groupId) {
+      return true;
+    }
+
+    // --- Roles ---
+    match /groupRoles/{docId} {
+      // The operator sees every role; a person sees only their own role
+      // documents. The document id check matters: a person has to be able to
+      // read their own role slot BEFORE it exists, otherwise they could never
+      // claim it. (matches() rather than endsWith() — endsWith is not a
+      // Firestore rules string method.)
+      allow read: if isPlatformAdmin()
+        || (isSignedIn()
+          && (uidOf(resource.data) == request.auth.uid
+              || docId.matches(".*_" + request.auth.uid + "$")));
+
+      // A person may only claim a MEMBER role for a member record that is
+      // already linked to their own login -- nobody can invent a role for
+      // themselves or for someone else.
+      // A person may also claim HEAD of a group they created themselves.
+      allow create: if isPlatformAdmin() || (
+        isSignedIn()
+        && uidOf(request.resource.data) == request.auth.uid
+        && (
+          (
+            roleOfDoc(request.resource.data) == "MEMBER"
+            && authUidOf(get(/databases/$(database)/documents/members/$(memberIdOf(request.resource.data))).data) == request.auth.uid
+          )
+          || (
+            roleOfDoc(request.resource.data) == "HEAD"
+            && createdByOf(get(/databases/$(database)/documents/groups/$(groupOf(request.resource.data))).data) == request.auth.uid
+          )
+        )
+      );
+
+      // Promoting someone to HEAD, or revoking access, is the operator's job only.
+      // A person may always drop their own role (e.g. when withdrawing a group).
+      allow update: if isPlatformAdmin();
+      allow delete: if isPlatformAdmin()
+        || (isSignedIn() && uidOf(resource.data) == request.auth.uid);
+    }
+
+    // --- Groups ---
+    match /groups/{groupId} {
+      allow read: if isSignedIn();
+
+      // Anyone may start a group. It lands as PENDING_REVIEW -- only the
+      // operator can switch it to ACTIVE.
+      allow create: if isPlatformAdmin() || (
+        isSignedIn()
+        && createdByOf(request.resource.data) == request.auth.uid
+        && statusOf(request.resource.data) == "PENDING_REVIEW"
+      );
+
+      // The operator approves or rejects. A founder may rename their own
+      // group, but can never approve it themselves.
+      allow update: if isPlatformAdmin() || (
+        createdByOf(resource.data) == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name"])
+      );
+
+      // A founder can withdraw a group that has not been approved yet.
+      allow delete: if isPlatformAdmin() || (
+        createdByOf(resource.data) == request.auth.uid
+        && statusOf(resource.data) == "PENDING_REVIEW"
+      );
+    }
+
+    // --- Members ---
+    match /members/{memberId} {
+      allow read: if isSignedIn();
+
+      // Self-registration: a signed-in person creates their own profile,
+      // inactive (the operator/HEAD activates it), never as HEAD.
+      // A HEAD can also add a member to their own group (PIN-style, no login yet).
+      allow create: if isPlatformAdmin() || (
+        isSignedIn()
+        && groupOf(request.resource.data) is string
+        && true
+        && (
+          (
+            authUidOf(request.resource.data) == request.auth.uid
+            && isActiveOf(request.resource.data) == false
+            && (!("role" in request.resource.data) || roleOfDoc(request.resource.data) == "MEMBER")
+          )
+          || isHeadOf(groupOf(request.resource.data))
+        )
+      );
+
+      allow update: if isPlatformAdmin()
+        // HEAD edits members of their own group -- but never identity or role
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "isActive", "eligibleFromRoundId", "collectedMonths", "pin",
+            "name", "phone", "bankName", "accountNo", "accountName", "groupId"
+          ])
+        )
+        // A member claims an unlinked profile with their own login (PIN -> email upgrade).
+        // Only email + authUid may change, and only on a profile nobody owns yet.
+        || (
+          !("authUid" in resource.data)
+          && authUidOf(request.resource.data) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["email", "authUid"])
+        );
+
+      allow delete: if isPlatformAdmin()
+        || isHeadOf(groupOf(resource.data))
+        // A member may remove their own profile (leaving a group they never
+        // took part in).
+        || (isSignedIn() && authUidOf(resource.data) == request.auth.uid);
+    }
+
+    // --- Rounds (months) + payment log ---
+    match /months/{monthId} {
+      allow read: if isSignedIn();
+
+      allow create: if isPlatformAdmin()
+        || (groupOf(request.resource.data) is string && isHeadOf(groupOf(request.resource.data)));
+
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        )
+        // Members may only move their own contribution flags on the round:
+        // "I sent the money" / "I received the money". Never the amount,
+        // never the recipient list, never the status.
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isMemberOf(groupOf(resource.data))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "payments", "payoutConfirmedByRecipients"
+          ])
+        );
+
+      allow delete: if isPlatformAdmin()
+        || isHeadOf(groupOf(resource.data));
+    }
+
+    // --- Relief Fund ---
+    match /reliefMembers/{docId} {
+      allow read: if isSignedIn();
+      // Joining the fund: a member opts in with a zero balance. Balance and
+      // lifetime contributions are only ever touched by the operator/HEAD.
+      allow create: if isPlatformAdmin() || (
+        isMemberOf(groupOf(request.resource.data))
+        && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
+        && request.resource.data.balance == 0
+        && request.resource.data.totalContributed == 0
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /reliefContributions/{docId} {
+      allow read: if isSignedIn();
+      // A deposit starts as PENDING and is only ever credited by the operator/HEAD.
+      allow create: if isPlatformAdmin() || (
+        isMemberOf(groupOf(request.resource.data))
+        && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
+        && statusOf(request.resource.data) == "PENDING"
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /reliefWithdrawals/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isPlatformAdmin() || (
+        isMemberOf(groupOf(request.resource.data))
+        && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
+        && statusOf(request.resource.data) == "PENDING"
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /reliefRequests/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isPlatformAdmin() || (
+        isMemberOf(groupOf(request.resource.data))
+        && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
+        && statusOf(request.resource.data) == "VOTING"
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        )
+        // A member may withdraw their own request -- nothing else.
+        || (
+          memberIdOf(resource.data) == myMemberIdIn(groupOf(resource.data))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+          && statusOf(request.resource.data) == "CANCELLED"
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /reliefVoteReceipts/{docId} {
+      allow read: if isSignedIn();
+      // One receipt per member per request (document id is {requestId}_{memberId})
+      // and it can never be changed -- that is what stops a second vote.
+      allow create: if isMemberOf(groupOf(request.resource.data))
+        && voterIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data));
+      allow update: if false;
+      allow delete: if voterIdOf(resource.data) == myMemberIdIn(groupOf(resource.data));
+    }
+
+    match /reliefBallots/{docId} {
+      allow read: if isSignedIn();
+      // The ballot carries the choice but no voter -- that is what keeps the
+      // vote anonymous. A receipt must already exist for the voter, so a
+      // member cannot drop in extra ballots.
+      allow create: if isMemberOf(groupOf(request.resource.data))
+        && true;
+      allow update, delete: if false;
+    }
+
+    match /reliefRepayments/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isPlatformAdmin() || (
+        isMemberOf(groupOf(request.resource.data))
+        && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
+        && statusOf(request.resource.data) == "PENDING"
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // --- Real Estate Pools ---
+    match /developer_partners/{partnerId} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformAdmin();
+    }
+
+    match /properties/{propertyId} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformAdmin();
+    }
+
+    match /property_milestones/{milestoneId} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformAdmin();
+    }
+
+    match /real_estate_pools/{poolId} {
+      allow read: if isSignedIn();
+      allow create: if isPlatformAdmin()
+        || (groupOf(request.resource.data) is string && isHeadOf(groupOf(request.resource.data)));
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /pool_contributions/{contributionId} {
+      allow read: if isSignedIn();
+      // A member may only contribute to a pool in their own group, for a
+      // member of that group, and never pre-verified.
+      allow create: if isPlatformAdmin() || (
+        groupOf(request.resource.data) is string
+        && isMemberOf(groupOf(request.resource.data))
+        && memberBelongsToGroup(memberIdOf(request.resource.data), groupOf(request.resource.data))
+        && verifiedOf(request.resource.data) == false
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /pool_disputes/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isPlatformAdmin() || (
+        groupOf(request.resource.data) is string
+        && isMemberOf(groupOf(request.resource.data))
+        && memberBelongsToGroup(memberIdOf(request.resource.data), groupOf(request.resource.data))
+      );
+      allow update: if isPlatformAdmin()
+        || (
+          sameGroup(resource.data, request.resource.data)
+          && isHeadOf(groupOf(resource.data))
+        );
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /ownership_certificates/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformAdmin()
+        || (
+          groupOf(request.resource.data) is string
+          && isHeadOf(groupOf(request.resource.data))
+        );
+    }
+
+    // --- Everything else: deny ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

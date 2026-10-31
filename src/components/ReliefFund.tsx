@@ -10,7 +10,6 @@ import {
   runTransaction,
   updateDoc,
   getDocs,
-  writeBatch,
 } from "firebase/firestore";
 
 // ============================================================
@@ -336,7 +335,7 @@ export default function ReliefFund({
     try {
       // read fresh from the database so we never settle on stale numbers
       const [ballotSnap, receiptSnap, memberSnap] = await Promise.all([
-        getDocs(query(collection(db, "reliefBallots"), where("requestId", "==", r.id))),
+        getDocs(query(collection(db, "reliefBallots"), where("groupId", "==", groupId), where("requestId", "==", r.id))),
         getDocs(query(collection(db, "reliefVoteReceipts"), where("requestId", "==", r.id))),
         getDocs(query(collection(db, "reliefMembers"), where("groupId", "==", r.groupId))),
       ]);
@@ -503,7 +502,7 @@ export default function ReliefFund({
 
   useEffect(() => {
     if (!activeAdvanceId) { setRepayments([]); return; }
-    const q = query(collection(db, "reliefRepayments"), where("requestId", "==", activeAdvanceId));
+    const q = query(collection(db, "reliefRepayments"), where("groupId", "==", groupId), where("requestId", "==", activeAdvanceId));
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((d) => d.data() as ReliefRepayment);
       list.sort((a, b) => (a.createdAt || a.paidAt) < (b.createdAt || b.paidAt) ? 1 : -1);
@@ -689,17 +688,16 @@ export default function ReliefFund({
 
     setVotingId(r.id);
     try {
-      const batch = writeBatch(db);
-      // receipt: who voted (no choice recorded)
-      batch.set(doc(db, "reliefVoteReceipts", `${r.id}_${memberId}`), {
+      // 1. The receipt (who voted, no choice) goes first. Its document id is
+      //    fixed, so a second vote for the same request can never be written.
+      await setDoc(doc(db, "reliefVoteReceipts", `${r.id}_${memberId}`), {
         requestId: r.id,
         voterId: memberId,
         groupId,
       });
-      // ballot: the choice (no voter recorded)
+      // 2. The ballot (the choice, no voter) keeps the vote anonymous.
       const ballotRef = doc(collection(db, "reliefBallots"));
-      batch.set(ballotRef, { id: ballotRef.id, requestId: r.id, groupId, vote });
-      await batch.commit();
+      await setDoc(ballotRef, { id: ballotRef.id, requestId: r.id, groupId, vote });
     } catch (e) {
       console.error(e);
       setVoteError("Could not record your vote. You may have already voted on this request.");
@@ -764,7 +762,7 @@ export default function ReliefFund({
         }
 
         const now = new Date();
-        const monthsChosen = Math.max(1, Math.min(REPAYMENT_MONTHS, chosenRepayMonths || REPAYMENT_MONTHS));
+        const monthsChosen = REPAYMENT_MONTHS;
         // avg monthly from history for preview: total / elapsed months
         const joined = new Date(current.joinedAt);
         const elapsedMonths = Math.max(1, (now.getFullYear() - joined.getFullYear()) * 12 + (now.getMonth() - joined.getMonth()) + 1);

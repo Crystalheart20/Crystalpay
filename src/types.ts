@@ -3,6 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export type GroupRole = "MEMBER" | "HEAD";
+
+// One document per person per group: groupRoles/{groupId}_{uid}
+export interface GroupRoleDoc {
+  groupId: string;
+  uid: string;
+  email: string;
+  memberId: string; // the Member.id this login belongs to
+  role: GroupRole;
+  createdAt: string;
+}
+
 export interface Member {
   id: string;
   name: string;
@@ -14,6 +26,7 @@ export interface Member {
   isActive: boolean;
   eligibleFromRoundId?: string; // if set, member is only eligible to be drawn from this round onward (e.g. "2026-07"); allows approving now but joining next draw
   groupId?: string;
+  role?: GroupRole; // HEAD runs their group; MEMBER (default) does not
   pin?: string; // 4-digit PIN — legacy fallback during transition to email/password login
   email?: string; // Set once member registers with email + password
   authUid?: string; // Firebase Auth UID, set once member registers — links this record to their real login
@@ -44,6 +57,7 @@ export interface ContributionMonth {
   status: "ACTIVE" | "COMPLETED";
   payments: PaymentLog[]; // Log of confirmed payments
   closingRemark?: string; // AI generated closing template
+  contributionDeadline?: string; // ISO date by which contributions for this round are due
   payoutConfirmedByRecipients?: string[]; // List of winner IDs who confirmed bank receipt
 }
 
@@ -108,6 +122,7 @@ export interface RealEstatePool {
 export interface PoolContribution {
   id: string;
   poolId: string;
+  groupId?: string;
   memberId: string;
   amount: number;
   currency: string;
@@ -134,6 +149,7 @@ export interface PoolReleaseApproval {
 export interface PoolDispute {
   id: string;
   poolId: string;
+  groupId?: string;
   memberId: string;
   title: string;
   description: string;

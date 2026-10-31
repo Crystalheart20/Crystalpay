@@ -19,9 +19,13 @@ import {
   FileText,
   BadgePercent,
   CheckSquare,
-  Inbox
+  Inbox,
+  Users
 } from "lucide-react";
 import ReliefFund from "./ReliefFund";
+import { createGroupAsHead, leaveGroup } from "../groupAccess";
+import { auth } from "../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 const SHOW_RELIEF_FUND = true; // set to true when Relief Fund is finished
 interface MemberPortalProps {
   members: Member[];
@@ -29,7 +33,7 @@ interface MemberPortalProps {
   currentMonthId: string;
   currency: string;
   onAddMember: (member: Omit<Member, "id" | "collectedMonths" | "isActive">) => void;
-  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => void;
+  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => Promise<{ ok: boolean; error?: string; alreadyRecorded?: boolean }>;
   onConfirmPayoutReceipt: (memberId: string, monthId: string) => void;
   onConfirmPaymentCredit?: (memberId: string, recipientId: string, transactionRef: string) => Promise<void>;
   onLoginChange?: (groupId: string) => void;
@@ -129,8 +133,85 @@ export default function MemberPortal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [memberTab, setMemberTab] = useState<"overview" | "recipient" | "upload" | "confirm" | "ledger" | "relief">("overview");
 
+  // Starting a group of your own — you become its group head.
+  const [startingGroup, setStartingGroup] = useState(false);
+  const [groupCreated, setGroupCreated] = useState<string | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
+
+  const handleStartGroup = async () => {
+    if (!loggedInMember) return;
+    if (!loggedInMember.authUid) {
+      setGroupError("Create your email login first — that is what links your account to the group you start.");
+      return;
+    }
+    const name = window.prompt("Name your new group (e.g. ‘Family Ajo 2026’):");
+    if (!name || !name.trim()) return;
+    setStartingGroup(true);
+    setGroupError(null);
+    try {
+      const { groupId } = await createGroupAsHead(name.trim(), {
+        uid: loggedInMember.authUid,
+        email: loggedInMember.email || "",
+        name: loggedInMember.name,
+        phone: loggedInMember.phone,
+        bankName: loggedInMember.bankName,
+        accountNo: loggedInMember.accountNo,
+        accountName: loggedInMember.accountName,
+      });
+      setGroupCreated(groupId);
+    } catch (e: any) {
+      console.error(e);
+      setGroupError(
+        e?.code === "permission-denied"
+          ? "Could not create the group. Make sure you are signed in with your own email account."
+          : "Could not create the group. Please try again."
+      );
+    } finally {
+      setStartingGroup(false);
+    }
+  };
+
   const currentMonth = months.find(m => m.id === currentMonthId) || months[0];
   const loggedInMember = members.find(m => m.id === loggedInMemberId);
+
+  // Which Firebase account this browser is really signed in with. A member who
+  // logs in with a PIN (or just opens their member link) is signed in
+  // ANONYMOUSLY, so the Firestore rules reject every write they make — the
+  // upload has to say so instead of pretending the receipt was saved.
+  const [realLoginUid, setRealLoginUid] = useState<string | null>(null);
+  useEffect(() => {
+    const apply = (u: any) => setRealLoginUid(u && u.isAnonymous === false ? u.uid : null);
+    apply(auth.currentUser);
+    return onAuthStateChanged(auth, apply);
+  }, []);
+  const isMissingEmailLogin = !realLoginUid || (!!loggedInMember?.authUid && realLoginUid !== loggedInMember.authUid);
+
+  // Leaving a group you never took part in — removes your profile and access.
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  const hasAnyHistory = months.some(m =>
+    (m.payments || []).some(p => p.memberId === loggedInMemberId) ||
+    (m.recipients || []).includes(loggedInMemberId) ||
+    (m.payoutConfirmedByRecipients || []).includes(loggedInMemberId)
+  ) || (loggedInMember?.collectedMonths || []).length > 0;
+
+  const handleLeaveGroup = async () => {
+    if (!loggedInMember) return;
+    if (!window.confirm("Leave this group? Your profile here will be removed.")) return;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await leaveGroup(loggedInMember.id, loggedInMember.groupId || "default");
+      localStorage.removeItem("ajo_member_session");
+      window.location.reload();
+    } catch (e: any) {
+      console.error(e);
+      setLeaveError("Could not leave the group. Please try again.");
+      setLeaving(false);
+    }
+  };
+
 
   // Constants & Metrics
   const activeRecipientsList = currentMonth 
@@ -461,6 +542,10 @@ export default function MemberPortal({
 
   const handleAuditProof = async () => {
     if (!loggedInMemberId) return;
+    if (isMissingEmailLogin) {
+      setAuditError("This browser is not signed in with your email login, so the receipt cannot be saved to the group ledger. Sign out and log in with your email address and password first.");
+      return;
+    }
     if (!imagePreview && !manualText.trim()) {
       setAuditError("Please upload an transaction proof screenshot or paste your credit SMS.");
       return;
@@ -491,15 +576,23 @@ export default function MemberPortal({
       const auditData = await response.json();
       setAuditResult(auditData);
 
-      // Save payment state in App if auto-approved by Gemini
+      // Save payment state in App if auto-approved by Gemini. The save may be
+      // refused by Firestore (e.g. a PIN-only session) — only claim the
+      // receipt was sent when it really was.
       if (auditData.isReceipt && auditData.status === "APPROVED") {
-        onPaymentApproved(
+        const saved = await onPaymentApproved(
           loggedInMemberId,
           auditData.amount || targetAmount,
           auditData.transactionReference || ("TXN-" + Date.now()),
           auditData.senderName || loggedInMember?.name,
           targetRecipientId
         );
+        if (!saved?.ok) {
+          setAuditError(
+            saved?.error ||
+            "The AI approved this receipt, but it could NOT be saved to the group ledger. Please contact the admin."
+          );
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -1100,12 +1193,24 @@ export default function MemberPortal({
           </div>
 
           {memberTab === "relief" && SHOW_RELIEF_FUND && (
-            <ReliefFund
-              groupId={loggedInMember.groupId || "default"}
-              memberId={loggedInMember.id}
-              memberName={loggedInMember.name}
-              isMemberActive={loggedInMember.isActive}
-            />
+            <>
+              {!loggedInMember.authUid && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 space-y-1">
+                  <p className="font-bold">Sign in with your email to use the Relief Fund</p>
+                  <p>
+                    Deposits, withdrawals and votes now need your own login, so the group
+                    head can always see exactly who did what. Use &ldquo;Set up email login&rdquo;
+                    in the header to create one.
+                  </p>
+                </div>
+              )}
+              <ReliefFund
+                groupId={loggedInMember.groupId || "default"}
+                memberId={loggedInMember.id}
+                memberName={loggedInMember.name}
+                isMemberActive={loggedInMember.isActive}
+              />
+            </>
           )}
 
           {memberTab === "overview" && (
@@ -1133,6 +1238,54 @@ export default function MemberPortal({
                     <button onClick={function() { setMemberTab("ledger"); }} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700">My Ledger</button>
                   </div>
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Run a group of your own */}
+          {memberTab === "overview" && (
+            <div className="bg-white border border-slate-200/60 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-indigo-600" />
+                <h4 className="text-sm font-bold text-slate-800">Run a group of your own</h4>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Start a new savings circle and run it yourself — you become its group head, add
+                your members, draw the ballot and confirm what everybody has paid. The CoVest
+                operator reviews the group before it goes live.
+              </p>
+              {groupCreated ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1">
+                  <p className="font-bold">Your group is created and waiting for approval.</p>
+                  <a
+                    href={`?role=head&groupId=${groupCreated}`}
+                    className="font-bold underline"
+                  >
+                    Open your group head panel
+                  </a>
+                </div>
+              ) : (
+                <button
+                  onClick={handleStartGroup}
+                  disabled={startingGroup}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold"
+                >
+                  {startingGroup ? "Creating…" : "Start my own group"}
+                </button>
+              )}
+              {groupError && <p className="text-xs font-semibold text-rose-600">{groupError}</p>}
+
+              {!hasAnyHistory && (
+                <div className="border-t border-slate-100 pt-3">
+                  <button
+                    onClick={handleLeaveGroup}
+                    disabled={leaving}
+                    className="text-[10px] font-bold text-slate-400 hover:text-rose-600 disabled:opacity-40"
+                  >
+                    {leaving ? "Leaving…" : "Leave this group"}
+                  </button>
+                  {leaveError && <p className="text-[10px] font-semibold text-rose-600 mt-1">{leaveError}</p>}
+                </div>
               )}
             </div>
           )}
@@ -1578,6 +1731,41 @@ export default function MemberPortal({
                   Make your transfer, then upload the receipt screenshot or paste the instant SMS alert here. Our AI will check it, then it is marked <strong>Sent — awaiting winner check</strong>. The winner presses <strong>Confirm Credit</strong> in their portal, then the admin does the <strong>Final Confirm</strong>.
                 </p>
 
+                {isMissingEmailLogin && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 space-y-2">
+                    {loggedInMember?.authUid ? (
+                      <>
+                        <p className="font-bold">🔐 Sign in with your email before uploading</p>
+                        <p className="leading-relaxed">
+                          Your profile already has an email login, but this browser is signed in
+                          without it (PIN or member link only). A receipt uploaded like this gets
+                          checked by the AI but is <strong>not saved</strong>, so the winner never
+                          sees it. Tap <strong>Sign Out Portal</strong> at the top, then log in with
+                          your email address and password.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-bold">🔐 Create your email login before uploading</p>
+                        <p className="leading-relaxed">
+                          You are signed in with a PIN or a member link, which the group ledger
+                          cannot write to. A receipt uploaded now would check out with the AI but
+                          would <strong>not be saved</strong>, so the winner would never see it.
+                        </p>
+                        <button
+                          onClick={() => {
+                            setShowSetupEmailPrompt(true);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px]"
+                        >
+                          Set up email login (box opens at the top)
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* File Upload center */}
                 <div className="space-y-4">
                   
@@ -1674,10 +1862,11 @@ export default function MemberPortal({
                     
                     <button
                       onClick={handleAuditProof}
-                      disabled={uploading}
+                      disabled={uploading || isMissingEmailLogin}
+                      title={isMissingEmailLogin ? "Set up your email login first — a PIN session cannot save the receipt." : undefined}
                       className={`flex-1 py-2.5 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition ${
-                        uploading 
-                          ? "bg-slate-300 cursor-not-allowed" 
+                        uploading || isMissingEmailLogin
+                          ? "bg-slate-300 cursor-not-allowed"
                           : "bg-emerald-600 hover:bg-emerald-700 shadow shadow-emerald-600/10"
                       }`}
                     >
@@ -1740,9 +1929,13 @@ export default function MemberPortal({
                         {auditResult.explanation}
                       </div>
 
-                      {auditResult.status === "APPROVED" ? (
+                      {auditResult.status === "APPROVED" && !auditError ? (
                         <div className="bg-amber-50 text-amber-800 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-amber-200">
                           ⏳ Sent! Marked as <strong>Awaiting winner + admin confirmation</strong>. The winner will confirm the credit, then the admin does the final check. Not yet counted as Paid.
+                        </div>
+                      ) : auditResult.status === "APPROVED" ? (
+                        <div className="bg-rose-50 text-rose-700 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-rose-200">
+                          ❌ <strong>Not sent.</strong> The AI approved the receipt, but saving it to the group ledger failed. Nothing was recorded — fix the problem above and upload again.
                         </div>
                       ) : auditResult.status === "FLAGGED" ? (
                         <div className="bg-rose-50 text-rose-700 p-2.5 rounded-lg text-center text-xs font-semibold leading-snug border border-rose-200">

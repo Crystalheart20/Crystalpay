@@ -6,7 +6,7 @@ interface ReceiptVerifierProps {
   members: Member[];
   expectedAmount: number;
   currency: string;
-  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => void;
+  onPaymentApproved: (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => Promise<{ ok: boolean; error?: string; alreadyRecorded?: boolean }>;
 }
 
 export default function ReceiptVerifier({
@@ -144,12 +144,15 @@ export default function ReceiptVerifier({
 
       // If approved, notify parent controller to record the transaction
       if (auditData.isReceipt && auditData.status === "APPROVED") {
-        onPaymentApproved(
+        const saved = await onPaymentApproved(
           selectedMemberId,
           auditData.amount || expectedAmount,
           auditData.transactionReference || ("TXN-" + Date.now()),
           auditData.senderName
         );
+        if (!saved?.ok) {
+          setErrorMsg(saved?.error || "The AI approved the receipt, but the payment could not be saved.");
+        }
       }
     } catch (err: any) {
       console.error(err);

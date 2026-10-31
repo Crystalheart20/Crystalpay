@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Member, ContributionMonth, PaymentLog } from "./types";
+import React, { useState, useEffect, useRef } from "react";
+import { Member, ContributionMonth, PaymentLog, GroupRole, GroupRoleDoc } from "./types";
 import Dashboard from "./components/Dashboard";
 import BallotWheel from "./components/BallotWheel";
 import ReceiptVerifier from "./components/ReceiptVerifier";
@@ -8,11 +8,25 @@ import MemberPortal from "./components/MemberPortal";
 import RealEstatePools from "./components/RealEstatePools";
 import ReliefAdminPanel from "./components/ReliefAdminPanel";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
-import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc } from "firebase/firestore";
+import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import AdminLogin from "./components/AdminLogin";
+import MigrationPanel from "./components/MigrationPanel";
+import MemberLoginsPanel from "./components/MemberLoginsPanel";
+import {
+  ensureGroupRole,
+  roleDocId,
+  withFreshToken,
+  getGroupRole,
+  getMyHeadGroups,
+  setMemberHeadRole,
+  createGroupAsHead,
+  withdrawGroup,
+} from "./groupAccess";
+import GroupRequestsPanel from "./components/GroupRequestsPanel";
+import NotGroupHead from "./components/NotGroupHead";
 
 // Helper to recursively remove all undefined values from an object for Firestore compatibility
 function cleanData<T>(obj: T): T {
@@ -54,6 +68,8 @@ export interface AjoGroup {
   id: string;
   name: string;
   createdAt: string;
+  status?: "ACTIVE" | "PENDING_REVIEW" | "SUSPENDED";
+  createdBy?: string;
 }
 
 export default function App() {
@@ -68,8 +84,11 @@ export default function App() {
     return localStorage.getItem("selected_ajo_group_id") || "default";
   });
 
+  // ?role=head opens the group head surface instead of the operator's.
+  const isHeadUrl = new URLSearchParams(window.location.search).get("role") === "head";
+
   const [allMembers, setAllMembers] = useState<(Member & { groupId?: string })[]>(() => {
-    const saved = localStorage.getItem("ajo_members");
+    const saved = localStorage.getItem(`ajo_members_${localStorage.getItem("selected_ajo_group_id") || "default"}`);
     if (saved) {
       try {
         return JSON.parse(saved) as (Member & { groupId?: string })[];
@@ -81,7 +100,7 @@ export default function App() {
   });
 
   const [allMonths, setAllMonths] = useState<(ContributionMonth & { groupId?: string })[]>(() => {
-    const saved = localStorage.getItem("ajo_months");
+    const saved = localStorage.getItem(`ajo_months_${localStorage.getItem("selected_ajo_group_id") || "default"}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as (ContributionMonth & { groupId?: string })[];
@@ -100,6 +119,10 @@ export default function App() {
   });
 
   const [adminUser, setAdminUser] = useState<FirebaseUser | null>(null);
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [myRole, setMyRole] = useState<GroupRoleDoc | null>(null);
+  const [myHeadGroups, setMyHeadGroups] = useState<GroupRoleDoc[]>([]);
+  const [groupRoleDocs, setGroupRoleDocs] = useState<GroupRoleDoc[]>([]);
 const [authLoading, setAuthLoading] = useState(true);
   const [currentMonthId, setCurrentMonthId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"dashboard" | "ballot" | "auditor" | "whatsapp" | "portal" | "realestate">(() => {
@@ -120,17 +143,100 @@ const [authLoading, setAuthLoading] = useState(true);
   const members = allMembers.filter(m => (m.groupId || "default") === selectedGroupId);
   const months = allMonths.filter(m => (m.groupId || "default") === selectedGroupId);
 
+  const isPlatformAdmin = !!adminUser;
+  const isGroupHead = myRole?.role === "HEAD";
+  const canManageGroup = isPlatformAdmin || isGroupHead;
+  const myHeadGroupIds = new Set(myHeadGroups.map(r => r.groupId));
+  // A group head only ever sees the groups they run.
+  const visibleGroups = (isPlatformAdmin || myHeadGroups.length === 0)
+    ? groups
+    : groups.filter(g => myHeadGroupIds.has(g.id));
+
     useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
     const ADMIN_EMAILS = ["hammed.olaoye2015@gmail.com"];
 setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || "") ? user : null);
+      setAuthUser(user);
       setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // Subscribe to Ajo groups in central Firestore
+  // Claim the role document for this login. It is what gives the member
+  // permission to write inside their group, and it has to happen for a
+  // returning member too — their Firebase session is restored without the
+  // login form ever running.
+  const claimedRoles = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (!authUser || authUser.isAnonymous) return;
+    // One person can be a member of more than one group, so pick the member
+    // record that belongs to the group being viewed.
+    const gid = selectedGroupId || "default";
+    const mine = allMembers.find(
+      x => x.authUid === authUser.uid && (x.groupId || "default") === gid
+    );
+    if (!mine) return;
+    const key = `${gid}|${mine.id}|${authUser.uid}`;
+    if (claimedRoles.current.has(key)) return;
+    claimedRoles.current.add(key);
+    ensureGroupRole(gid, mine.id, authUser.uid, authUser.email || "").catch(() => {
+      claimedRoles.current.delete(key); // let a later attempt try again
+    });
+  }, [authUser, allMembers, selectedGroupId]);
+
+  // Which groups does this login run, and what is their role in the group
+  // that is currently selected?
+  useEffect(() => {
+    if (!authUser || authUser.isAnonymous) {
+      setMyRole(null);
+      setMyHeadGroups([]);
+      return;
+    }
+    let cancelled = false;
+    getMyHeadGroups(authUser.uid)
+      .then(rs => { if (!cancelled) setMyHeadGroups(rs); })
+      .catch(console.error);
+    getGroupRole(selectedGroupId, authUser.uid)
+      .then(r => { if (!cancelled) setMyRole(r); })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [authUser, selectedGroupId]);
+
+  // A group head lands on one of their own groups, never on somebody else's.
+  useEffect(() => {
+    if (isPlatformAdmin || myHeadGroups.length === 0) return;
+    if (myHeadGroups.some(r => r.groupId === selectedGroupId)) return;
+    const gid = myHeadGroups[0].groupId;
+    setSelectedGroupId(gid);
+    localStorage.setItem("selected_ajo_group_id", gid);
+    const params = new URLSearchParams(window.location.search);
+    params.set("groupId", gid);
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  }, [myHeadGroups, selectedGroupId, isPlatformAdmin]);
+
+  // Role documents for the selected group. Only the operator can read them all
+  // — a group head may read their own role and nobody else's.
+  useEffect(() => {
+    if (!isPlatformAdmin || !selectedGroupId) {
+      setGroupRoleDocs([]);
+      return;
+    }
+    const q = query(collection(db, "groupRoles"), where("groupId", "==", selectedGroupId));
+    const unsub = onSnapshot(
+      q,
+      (snap) => setGroupRoleDocs(snap.docs.map(d => d.data() as GroupRoleDoc)),
+      (err) => console.error("Role listener error:", err)
+    );
+    return () => unsub();
+  }, [isPlatformAdmin, selectedGroupId]);
+
+  // Subscribe to Ajo groups in central Firestore.
+  // Every listener below waits for `authUser`: the rules need a signed-in
+  // session, and a query that runs before the anonymous/e-mail sign-in lands is
+  // refused for good (onSnapshot does not retry), leaving the app empty until
+  // the page is reloaded.
+  useEffect(() => {
+    if (!authUser) return;
     const unsubscribe = onSnapshot(collection(db, "groups"), async (snapshot) => {
       const list: AjoGroup[] = [];
       snapshot.forEach((doc) => {
@@ -145,7 +251,8 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
         const defaultGroup: AjoGroup = {
           id: "default",
           name: "Primary Co-Op Pool",
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          status: "ACTIVE"
         };
         try {
           await setDoc(doc(db, "groups", "default"), defaultGroup);
@@ -158,11 +265,15 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [authUser]);
 
-  // Subscribe to members in central Firestore
+  // Subscribe to the members of the selected group. The rules only let a
+  // member read the members of a group they belong to, so the query has to
+  // ask for that group by name.
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "members"), (snapshot) => {
+    if (!selectedGroupId || !authUser) return;
+    const q = query(collection(db, "members"), where("groupId", "==", selectedGroupId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -171,23 +282,16 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
           id: doc.id
         });
       });
-      
-      const mappedList = list.map(m => {
-        if (!m.groupId) {
-          return { ...m, groupId: "default" };
-        }
-        return m;
-      });
-      setAllMembers(mappedList);
-    });
+      setAllMembers(list);
+    }, (err) => console.error("Members listener error:", err));
     return () => unsubscribe();
-  }, []);
+  }, [selectedGroupId, authUser]);
 
-  // Subscribe to months in central Firestore
-  // PERMANENT FIX: skip any document whose ID has no underscore prefix
-  // (e.g. bare "2026-06" is rogue; valid ones are "default_2026-06")
+  // Subscribe to the rounds of the selected group (same group scoping as members)
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "months"), (snapshot) => {
+    if (!selectedGroupId || !authUser) return;
+    const q = query(collection(db, "months"), where("groupId", "==", selectedGroupId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
         // Skip rogue documents that have no groupId prefix in their doc ID
@@ -214,14 +318,14 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
 
       setAllMonths(cleanedList);
       setFirestoreMonthsReady(true); // Mark Firestore as loaded — auto-seed can now safely check
-    });
+    }, (err) => console.error("Rounds listener error:", err));
     return () => unsubscribe();
-  }, []);
+  }, [selectedGroupId, authUser]);
 
   // Auto-seed ONLY if the Firestore document does not already exist
   // Uses getDoc to check first — NEVER overwrites existing ballot/winner data
   useEffect(() => {
-    if (!selectedGroupId) return;
+    if (!selectedGroupId || !authUser) return;
     const docId = `${selectedGroupId}_2026-06`;
     const docRef = doc(db, "months", docId);
     getDoc(docRef).then((snap) => {
@@ -240,7 +344,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       }
       // Document exists — do nothing, never overwrite
     }).catch(console.error);
-  }, [selectedGroupId]);
+  }, [selectedGroupId, authUser]);
 
   // Synchronize selectedGroupId with logged-in member's groupId if accessing via member portal
   useEffect(() => {
@@ -272,12 +376,12 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
   }, [allMonths, selectedGroupId, currentMonthId]);
 
   useEffect(() => {
-    localStorage.setItem("ajo_members", JSON.stringify(allMembers));
-  }, [allMembers]);
+    localStorage.setItem(`ajo_members_${selectedGroupId}`, JSON.stringify(allMembers));
+  }, [allMembers, selectedGroupId]);
 
   useEffect(() => {
-    localStorage.setItem("ajo_months", JSON.stringify(allMonths));
-  }, [allMonths]);
+    localStorage.setItem(`ajo_months_${selectedGroupId}`, JSON.stringify(allMonths));
+  }, [allMonths, selectedGroupId]);
 
   const currentMonth = months.find(m => m.id === currentMonthId) || months[0] || INITIAL_MONTHS[0];
   const currencySymbol = currentMonth?.id ? "NGN" : "NGN";
@@ -314,6 +418,9 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     const freshId = "mem-" + Date.now();
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      // Make sure Firestore signs the request with the NEW account, not the
+      // anonymous session we were on a moment ago.
+      await cred.user.getIdToken(true);
       const fresh: Member & { groupId: string } = {
         ...newMem,
         id: freshId,
@@ -323,7 +430,9 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
         email: email.trim(),
         authUid: cred.user.uid,
       };
-      await setDoc(doc(db, "members", freshId), fresh);
+      await withFreshToken(cred.user, () => setDoc(doc(db, "members", freshId), fresh));
+      // Role document = this login's permission slip inside this group.
+      await ensureGroupRole(targetGroupId, freshId, cred.user.uid, email.trim());
       setAllMembers(prev => [...prev, fresh]);
       return { success: true };
     } catch (e: any) {
@@ -473,12 +582,18 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
   const handleMemberRegister = async (memberId: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     const member = allMembers.find(m => m.id === memberId);
     if (!member) return { success: false, error: "Member not found." };
+    if (member.authUid) return { success: false, error: "This profile is already linked to an account." };
 
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await cred.user.getIdToken(true);
+      // updateDoc (not setDoc) so only the two fields we mean actually change.
+      await withFreshToken(cred.user, () =>
+        updateDoc(doc(db, "members", memberId), { email: email.trim(), authUid: cred.user.uid })
+      );
       const updated = { ...member, email: email.trim(), authUid: cred.user.uid };
       setAllMembers(prev => prev.map(m => m.id === memberId ? updated : m));
-      await setDoc(doc(db, "members", memberId), updated);
+      await ensureGroupRole(member.groupId || "default", memberId, cred.user.uid, email.trim());
       return { success: true };
     } catch (e: any) {
       console.error(e);
@@ -496,7 +611,12 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
   const handleMemberLogin = async (email: string, password: string): Promise<{ success: boolean; member?: Member; error?: string }> => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const member = allMembers.find(m => m.authUid === cred.user.uid);
+      // The same login may exist in more than one group — prefer the group
+      // this link points at, so people always land in the right group.
+      const wantedGroup = new URLSearchParams(window.location.search).get("groupId");
+      const member =
+        allMembers.find(m => m.authUid === cred.user.uid && wantedGroup && (m.groupId || "default") === wantedGroup) ||
+        allMembers.find(m => m.authUid === cred.user.uid);
       if (!member) {
         return { success: false, error: "No member profile linked to this account." };
       }
@@ -526,12 +646,16 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     }
   };
 
-  const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string) => {
+  // Returns whether the payment actually reached Firestore. The member portal
+  // shows the green "Sent!" panel only when ok is true: a PIN-only member is
+  // signed in anonymously, the rules reject their write, and the old code
+  // swallowed that error so the receipt looked saved when it was not.
+  const handleRecordPayment = async (memberId: string, amount: number, ref: string, senderName?: string, recipientId?: string): Promise<{ ok: boolean; error?: string; alreadyRecorded?: boolean }> => {
     const targetMonth = months.find(m => m.id === currentMonthId);
-    if (!targetMonth) return;
+    if (!targetMonth) return { ok: false, error: "This round is not loaded yet. Refresh the page and try again." };
     const targetRecipient = recipientId || targetMonth.recipients[0] || "unassigned";
     const exists = targetMonth.payments.some(p => p.memberId === memberId && p.recipientId === targetRecipient);
-    if (exists) return;
+    if (exists) return { ok: true, alreadyRecorded: true };
 
     const newPayment: PaymentLog = {
       memberId,
@@ -560,8 +684,23 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
 
     try {
       await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedMonth);
-    } catch (e) {
-      console.error(e);
+      return { ok: true };
+    } catch (e: any) {
+      console.error("Recording payment failed:", e);
+      // Undo the optimistic entry so the ledger never shows a payment that
+      // Firestore did not accept.
+      setAllMonths(prev => prev.map(m =>
+        m.id === currentMonthId && (m.groupId || "default") === selectedGroupId
+          ? { ...m, payments: targetMonth.payments }
+          : m
+      ));
+      return {
+        ok: false,
+        error:
+          e?.code === "permission-denied"
+            ? "Firebase rejected the save because this browser is not signed in with your email login. Set up your email login, then upload again."
+            : "Could not save the payment. Check your internet connection and try again."
+      };
     }
   };
 
@@ -856,6 +995,41 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     setActiveTab("dashboard");
   };
 
+  // Operator action: promote a member to group head of this group, or step
+  // them back down to a plain member.
+  const handleSetMemberRole = async (member: Member, role: GroupRole) => {
+    if (!member.authUid) {
+      alert("This member has no email login yet, so they cannot be made group head. Ask them to register with email and password first.");
+      return;
+    }
+    try {
+      await setMemberHeadRole(selectedGroupId, member.id, member.authUid, member.email || "", role);
+    } catch (e) {
+      console.error(e);
+      alert("Could not change that role. Are you signed in as the CoVest operator?");
+    }
+  };
+
+  // A founder can withdraw a group that has not been approved yet.
+  const handleWithdrawGroup = async () => {
+    const g = groups.find(x => x.id === selectedGroupId);
+    if (!g || !authUser) return;
+    const meInGroup = members.find(m => m.authUid === authUser.uid);
+    if (!window.confirm(`Withdraw "${g.name}"? The group and your place in it will be removed.`)) return;
+    try {
+      await withdrawGroup(selectedGroupId, authUser.uid, meInGroup?.id || "");
+      const fallback = groups.find(x => x.id !== selectedGroupId)?.id || "default";
+      setSelectedGroupId(fallback);
+      localStorage.setItem("selected_ajo_group_id", fallback);
+      const params = new URLSearchParams(window.location.search);
+      params.set("groupId", fallback);
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+    } catch (e) {
+      console.error(e);
+      alert("Could not withdraw the group.");
+    }
+  };
+
   const [copiedLink, setCopiedLink] = useState(false);
   const handleCopyLink = () => {
     const link = window.location.origin + window.location.pathname + `?role=member&groupId=${selectedGroupId}`;
@@ -872,8 +1046,25 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     );
   }
 
-  if (!isMemberOnlyUrl && !adminUser) {
-    return <AdminLogin />;
+  if (!isMemberOnlyUrl && !canManageGroup) {
+    // Signed in, but not the head of the group they asked for.
+    if (isHeadUrl && authUser && !authUser.isAnonymous) {
+      return (
+        <NotGroupHead
+          email={authUser.email || ""}
+          groups={myHeadGroups.map(r => r.groupId)}
+          groupNames={Object.fromEntries(groups.map(g => [g.id, g.name]))}
+          onOpenGroup={(gid) => {
+            setSelectedGroupId(gid);
+            localStorage.setItem("selected_ajo_group_id", gid);
+            const params = new URLSearchParams(window.location.search);
+            params.set("groupId", gid);
+            window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+          }}
+        />
+      );
+    }
+    return <AdminLogin mode={isHeadUrl ? "head" : "admin"} />;
   }
   
   
@@ -950,14 +1141,14 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
               }}
               className="w-full sm:w-48 bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none"
             >
-              {groups.map((g) => (
+              {visibleGroups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.name}
+                  {g.name}{g.status === "PENDING_REVIEW" ? " (awaiting approval)" : ""}
                 </option>
               ))}
             </select>
 
-            {!isMemberOnlyUrl && (
+            {isPlatformAdmin && !isMemberOnlyUrl && (
               <button
                 onClick={async () => {
                   const groupName = prompt("Enter a name for the new Co-Op / Asset Group:");
@@ -967,10 +1158,23 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
                     const newGrp: AjoGroup = {
                       id: newGroupId,
                       name: cleanName,
-                      createdAt: new Date().toISOString()
+                      createdAt: new Date().toISOString(),
+                      status: "ACTIVE",
+                      createdBy: adminUser?.uid || ""
                     };
                     try {
                       await setDoc(doc(db, "groups", newGroupId), newGrp);
+                      // Whoever creates a group runs it.
+                      if (adminUser) {
+                        await setDoc(doc(db, "groupRoles", roleDocId(newGroupId, adminUser.uid)), {
+                          groupId: newGroupId,
+                          uid: adminUser.uid,
+                          email: adminUser.email || "",
+                          memberId: "",
+                          role: "HEAD",
+                          createdAt: new Date().toISOString()
+                        });
+                      }
                       setSelectedGroupId(newGroupId);
                       localStorage.setItem("selected_ajo_group_id", newGroupId);
                       
@@ -988,6 +1192,17 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
                 <span>Create Group</span>
               </button>
             )}
+
+            {isGroupHead &&
+              groups.find(g => g.id === selectedGroupId)?.status === "PENDING_REVIEW" &&
+              authUser && (
+                <button
+                  onClick={handleWithdrawGroup}
+                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700/80 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm border border-rose-100 cursor-pointer"
+                >
+                  Withdraw group request
+                </button>
+              )}
           </div>
         </div>
         
@@ -1076,7 +1291,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
           <div className="flex-1 min-w-0 min-h-[450px]">
           {activeTab === "portal" && (
             <MemberPortal
-              members={allMembers}
+              members={members}
               groups={groups}
               months={allMonths}
               currentMonthId={currentMonthId}
@@ -1100,12 +1315,38 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
               members={members}
               selectedGroupId={selectedGroupId}
               isMemberOnlyUrl={isMemberOnlyUrl}
+              canManage={!!adminUser}
             />
           )}
 
           {activeTab === "dashboard" && (
             <div className="space-y-6">
-              <ReliefAdminPanel groupId={selectedGroupId} adminEmail={adminUser?.email || null} />
+              {isGroupHead && (
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                    Group head
+                  </p>
+                  <p className="text-xs text-indigo-900 mt-1">
+                    You run{" "}
+                    <strong>{groups.find(g => g.id === selectedGroupId)?.name || selectedGroupId}</strong>.
+                    Everything on this page applies to your group only — the CoVest operator can
+                    still see it.
+                  </p>
+                  {groups.find(g => g.id === selectedGroupId)?.status === "PENDING_REVIEW" && (
+                    <p className="text-xs font-bold text-amber-700 mt-2">
+                      This group is still waiting for the CoVest operator to approve it. You can
+                      set it up in the meantime — it goes live once it is approved.
+                    </p>
+                  )}
+                </div>
+              )}
+              {isPlatformAdmin && <GroupRequestsPanel />}
+              {isPlatformAdmin && <MigrationPanel />}
+              <MemberLoginsPanel members={members} />
+              <ReliefAdminPanel
+                groupId={selectedGroupId}
+                adminEmail={adminUser?.email || authUser?.email || null}
+              />
               <Dashboard
                 members={members}
                 months={months}
@@ -1119,11 +1360,13 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
                 onConfirmContribution={handleConfirmContribution}
                 onRejectContribution={handleRejectContribution}
                 onCloseRound={handleCloseRound}
-              onResetToPristine={handleResetToPristine}
               onResetBallot={handleResetBallot}
               onSetDeadline={handleSetDeadline}
               currentMonthDeadline={currentMonth?.contributionDeadline}
               onSetMemberPin={handleSetMemberPin}
+                groupHeads={groupRoleDocs}
+                onSetMemberRole={isPlatformAdmin ? handleSetMemberRole : undefined}
+                onResetToPristine={isPlatformAdmin ? handleResetToPristine : undefined}
             />
             </div>
           )}

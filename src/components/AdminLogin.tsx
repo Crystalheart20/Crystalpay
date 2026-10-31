@@ -3,7 +3,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
 import { ShieldCheck } from "lucide-react";
 
-export default function AdminLogin() {
+export default function AdminLogin({ mode = "admin" }: { mode?: "admin" | "head" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -15,12 +15,14 @@ export default function AdminLogin() {
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const ADMIN_EMAILS = ["hammed.olaoye2015@gmail.com"];
-      if (!ADMIN_EMAILS.includes(cred.user.email || "")) {
-        await auth.signOut();
-        setError("This account doesn't have admin access.");
-        setLoading(false);
-        return;
+      if (mode === "admin") {
+        const ADMIN_EMAILS = ["hammed.olaoye2015@gmail.com"];
+        if (!ADMIN_EMAILS.includes(cred.user.email || "")) {
+          await auth.signOut();
+          setError("This account doesn't have admin access.");
+          setLoading(false);
+          return;
+        }
       }
       // onAuthStateChanged in App.tsx will pick this up automatically
     } catch (err: any) {
@@ -44,7 +46,9 @@ export default function AdminLogin() {
         <div className="flex flex-col items-center text-center mb-6">
           <img src="/mark.svg" alt="CoVest" className="h-12 w-12 rounded-xl shadow-sm mb-3" />
           <h1 className="text-lg font-black text-slate-800">CoVest</h1>
-          <p className="text-xs text-slate-400 mt-1">by CrystalPay — Sign in to manage your group</p>
+          <p className="text-xs text-slate-400 mt-1">
+            by CrystalPay — {mode === "head" ? "Sign in to run your group" : "Sign in to manage your group"}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
