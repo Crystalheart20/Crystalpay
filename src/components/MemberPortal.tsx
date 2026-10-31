@@ -20,12 +20,14 @@ import {
   BadgePercent,
   CheckSquare,
   Inbox,
-  Users
+  Users,
+  Settings as SettingsIcon,
+  Mail
 } from "lucide-react";
 import ReliefFund from "./ReliefFund";
 import { createGroupAsHead, leaveGroup } from "../groupAccess";
 import { auth } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
 const SHOW_RELIEF_FUND = true; // set to true when Relief Fund is finished
 interface MemberPortalProps {
   members: Member[];
@@ -86,6 +88,9 @@ export default function MemberPortal({
 
   // "Set up email login" prompt — shown once after a successful PIN login, if member has no email yet
   const [showSetupEmailPrompt, setShowSetupEmailPrompt] = useState(false);
+  // Settings tab: password-reset feedback
+  const [resetSending, setResetSending] = useState(false);
+  const [resetMsg, setResetMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [setupEmail, setSetupEmail] = useState("");
   const [setupPassword, setSetupPassword] = useState("");
   const [setupError, setSetupError] = useState("");
@@ -131,7 +136,7 @@ export default function MemberPortal({
   const [receiptConfirming, setReceiptConfirming] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [memberTab, setMemberTab] = useState<"overview" | "recipient" | "upload" | "confirm" | "ledger" | "relief">("overview");
+  const [memberTab, setMemberTab] = useState<"overview" | "recipient" | "upload" | "confirm" | "ledger" | "relief" | "settings">("overview");
 
   // Starting a group of your own — you become its group head.
   const [startingGroup, setStartingGroup] = useState(false);
@@ -335,8 +340,10 @@ export default function MemberPortal({
       return;
     }
 
-    // PIN correct — proceed with login
-    if (!member.email) {
+    // PIN correct — proceed with login.
+    // Offer the email-login box whenever no login is actually linked, even if
+    // the profile still shows an email address left over from an earlier try.
+    if (!member.authUid || !member.email) {
       setShowSetupEmailPrompt(true);
     }
     setLoggedInMemberId(selectedMemberIdForPin);
@@ -381,6 +388,30 @@ export default function MemberPortal({
       setSetupPassword("");
     } else {
       setSetupError(result.error || "Setup failed.");
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    const email = loggedInMember?.email;
+    if (!email) return;
+    setResetSending(true);
+    setResetMsg(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetMsg({ ok: true, text: `Reset link sent to ${email}. Check your inbox and spam folder.` });
+    } catch (e: any) {
+      const code = e?.code || "";
+      const text =
+        code === "auth/user-not-found"
+          ? "No login account uses this email any more. Ask your group head to unlink this login so you can register a fresh one."
+          : code === "auth/invalid-email"
+          ? "The email saved on your profile is not a valid address. Ask your group head to correct it."
+          : code === "auth/too-many-requests"
+          ? "Too many reset emails were sent. Wait a few minutes and try again."
+          : "Could not send the reset email. Check your connection and try again.";
+      setResetMsg({ ok: false, text });
+    } finally {
+      setResetSending(false);
     }
   };
 
@@ -1153,13 +1184,28 @@ export default function MemberPortal({
               </div>
             </div>
 
-            <button
-              onClick={handleLogout}
-              className="text-xs font-semibold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-xl border border-rose-100 flex items-center gap-1.5 transition"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Sign Out Portal</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setMemberTab("settings");
+                  setLoginError("");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 flex items-center gap-1.5 transition"
+                title="Account settings: email login, password, profile"
+              >
+                <SettingsIcon className="w-4 h-4" />
+                <span>Settings</span>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="text-xs font-semibold text-rose-500 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-xl border border-rose-100 flex items-center gap-1.5 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out Portal</span>
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 p-1.5 flex flex-wrap gap-1.5">
@@ -1177,6 +1223,9 @@ export default function MemberPortal({
                 tabs.push({ id: "ledger", label: "My Ledger" });
                 if (SHOW_RELIEF_FUND) tabs.push({ id: "relief", label: "Relief Fund" });
               }
+              // Always last: members can come back here any time, whether or
+              // not they already have an email login.
+              tabs.push({ id: "settings", label: "Settings" });
               return tabs.map(function(tabItem) {
                 var active = memberTab === tabItem.id;
                 return (
@@ -1192,6 +1241,134 @@ export default function MemberPortal({
             })()}
           </div>
 
+          {memberTab === "settings" && (
+            <div className="space-y-4">
+              {/* Email login */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="h-5 w-5 text-indigo-600 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">Login &amp; security</h3>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Your email login is what lets your receipts reach the group ledger, and what the
+                      Relief Fund needs before it accepts a deposit or a vote.
+                    </p>
+                  </div>
+                </div>
+
+                {loggedInMember?.authUid ? (
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-1">
+                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-slate-400" />
+                        {loggedInMember.email || "No email saved on this profile"}
+                      </p>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        {realLoginUid && realLoginUid === loggedInMember.authUid
+                          ? "This browser is signed in with it — receipts you upload are saved."
+                          : "This browser is not signed in with it, so an upload here cannot be saved. Sign out, then log in with this email address and password."}
+                      </p>
+                      {!loggedInMember.email && (
+                        <p className="text-[11px] font-semibold text-amber-700 leading-relaxed">
+                          This profile is linked to a login with no email saved. Ask your group head to
+                          unlink it, then register a fresh login here.
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={handleSendPasswordReset}
+                        disabled={!loggedInMember.email || resetSending}
+                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold"
+                      >
+                        {resetSending ? "Sending…" : "Email me a password reset link"}
+                      </button>
+                      {(!realLoginUid || realLoginUid !== loggedInMember.authUid) && (
+                        <button
+                          onClick={handleLogout}
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700"
+                        >
+                          Sign out &amp; log in with email
+                        </button>
+                      )}
+                    </div>
+                    {resetMsg && (
+                      <p className={`text-[11px] font-semibold leading-relaxed ${resetMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
+                        {resetMsg.text}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      A password can never be read back, so a reset link is the only way to change one.
+                      To move your login to a different email, ask your group head to unlink this one first.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {loggedInMember?.email ? (
+                      <p className="text-[11px] font-semibold text-amber-700 leading-relaxed">
+                        This profile still shows {loggedInMember.email} from an earlier attempt, but no
+                        login is linked to it. Registering below replaces it.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        No email login yet. Add one below — you stay signed in with it and can stop
+                        using your PIN.
+                      </p>
+                    )}
+                    <input
+                      type="email"
+                      value={setupEmail}
+                      onChange={(e) => { setSetupEmail(e.target.value); setSetupError(""); }}
+                      placeholder="you@example.com"
+                      className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <input
+                      type="password"
+                      value={setupPassword}
+                      onChange={(e) => { setSetupPassword(e.target.value); setSetupError(""); }}
+                      placeholder="Choose a password (6+ characters)"
+                      className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    {setupError && <p className="text-[11px] font-semibold text-rose-600">{setupError}</p>}
+                    <button
+                      onClick={handleSetupEmail}
+                      disabled={setupLoading || !setupEmail || !setupPassword}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold"
+                    >
+                      {setupLoading ? "Saving…" : "Create my email login"}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Profile details */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-3">
+                <h3 className="text-sm font-bold text-slate-800">My details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    ["Name", loggedInMember?.name],
+                    ["Phone", loggedInMember?.phone],
+                    ["Bank", loggedInMember?.bankName],
+                    ["Account number", loggedInMember?.accountNo],
+                    ["Account name", loggedInMember?.accountName],
+                    ["Status", loggedInMember?.isActive ? "Active" : "Waiting for group head"]
+                  ].map(function(pair) {
+                    return (
+                      <div key={pair[0]} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{pair[0]}</p>
+                        <p className="text-xs font-semibold text-slate-800 break-words">{pair[1] || "—"}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Your group head changes these. A wrong bank detail has to be fixed by whoever runs
+                  the group, so the correction shows up for everyone in the ledger.
+                </p>
+              </div>
+            </div>
+          )}
+
           {memberTab === "relief" && SHOW_RELIEF_FUND && (
             <>
               {!loggedInMember.authUid && (
@@ -1199,8 +1376,8 @@ export default function MemberPortal({
                   <p className="font-bold">Sign in with your email to use the Relief Fund</p>
                   <p>
                     Deposits, withdrawals and votes now need your own login, so the group
-                    head can always see exactly who did what. Use &ldquo;Set up email login&rdquo;
-                    in the header to create one.
+                    head can always see exactly who did what. Open the <strong>Settings</strong> tab
+                    to create one.
                   </p>
                 </div>
               )}
@@ -1755,11 +1932,12 @@ export default function MemberPortal({
                         <button
                           onClick={() => {
                             setShowSetupEmailPrompt(true);
+                            setMemberTab("settings");
                             window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
                           className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px]"
                         >
-                          Set up email login (box opens at the top)
+                          Set up email login (opens in Settings)
                         </button>
                       </>
                     )}

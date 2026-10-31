@@ -6,15 +6,18 @@ import { Mail, KeyRound, Copy, Check, AlertTriangle, Users } from "lucide-react"
 
 interface MemberLoginsPanelProps {
   members: Member[];
+  // Operator only: clear a stale email/authUid so the member can claim a fresh login.
+  onUnlinkLogin?: (memberId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 // Admin/group-head view of who can log in: the email saved on each member's
 // profile, and a button that sends Firebase's password-reset mail. Nobody can
 // read a password — a reset link is the only way to help a member who forgot it.
-export default function MemberLoginsPanel({ members }: MemberLoginsPanelProps) {
+export default function MemberLoginsPanel({ members, onUnlinkLogin }: MemberLoginsPanelProps) {
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   const rows = useMemo(() => {
@@ -35,6 +38,23 @@ export default function MemberLoginsPanel({ members }: MemberLoginsPanelProps) {
     } catch {
       setResults(prev => ({ ...prev, [member.id]: { ok: false, message: "Could not copy — select the email and copy it by hand." } }));
     }
+  };
+
+  const unlinkLogin = async (member: Member) => {
+    if (!onUnlinkLogin) return;
+    const ok = window.confirm(
+      `Unlink ${member.name}'s login?\n\nTheir profile keeps its name, phone and bank details, but the email and account link are removed, so they can create a fresh login from the member portal Settings tab. Their old Firebase account is NOT deleted — remove it in the Firebase console if you need to.`
+    );
+    if (!ok) return;
+    setUnlinkingId(member.id);
+    const result = await onUnlinkLogin(member.id);
+    setUnlinkingId(null);
+    setResults(prev => ({
+      ...prev,
+      [member.id]: result.success
+        ? { ok: true, message: "Login unlinked — they can now create a fresh one in Settings." }
+        : { ok: false, message: result.error || "Could not unlink the login." }
+    }));
   };
 
   const sendReset = async (member: Member) => {
@@ -87,8 +107,10 @@ export default function MemberLoginsPanel({ members }: MemberLoginsPanelProps) {
           </p>
           <p>{withoutLogin.map(m => m.name).join(", ")}</p>
           <p className="text-amber-700">
-            Ask them to tap “Set up email login” in the member portal. Until then the group ledger
-            refuses anything they try to save.
+            Ask them to open the <strong>Settings</strong> tab in the member portal and create one.
+            Until then the group ledger refuses anything they try to save. If a row shows an email
+            but the member says they cannot log in, the Firebase account behind it may be gone —
+            press <strong>Unlink</strong> on that row so they can register again.
           </p>
         </div>
       )}
@@ -166,6 +188,20 @@ export default function MemberLoginsPanel({ members }: MemberLoginsPanelProps) {
                         <Mail className="w-3 h-3" />
                         {sendingId === m.id ? "Sending…" : "Send reset"}
                       </button>
+                      {onUnlinkLogin && (m.authUid || m.email) && (
+                        <button
+                          onClick={() => unlinkLogin(m)}
+                          disabled={unlinkingId === m.id}
+                          title="Clear the saved email and account link so this member can create a fresh login"
+                          className={`px-2 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition ${
+                            unlinkingId === m.id
+                              ? "border-slate-200 text-slate-300 cursor-not-allowed"
+                              : "border-rose-200 text-rose-600 hover:bg-rose-50"
+                          }`}
+                        >
+                          {unlinkingId === m.id ? "Unlinking…" : "Unlink"}
+                        </button>
+                      )}
                     </div>
                     {res && (
                       <p className={`mt-1 text-[10px] font-semibold ${res.ok ? "text-emerald-700" : "text-rose-600"}`}>

@@ -8,7 +8,7 @@ import MemberPortal from "./components/MemberPortal";
 import RealEstatePools from "./components/RealEstatePools";
 import ReliefAdminPanel from "./components/ReliefAdminPanel";
 import { Users, Coins, Percent, Award, ShieldCheck, MessageSquare, PlusCircle, CreditCard, Sparkles, LayoutDashboard, Calendar, User, Share2, Plus, Building2 } from "lucide-react";
-import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc, updateDoc, query, where } from "firebase/firestore";
+import { collection, doc, setDoc as firebaseSetDoc, onSnapshot, deleteDoc, getDoc, updateDoc, query, where, deleteField } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
@@ -604,6 +604,28 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
         return { success: false, error: "Password should be at least 6 characters." };
       }
       return { success: false, error: "Registration failed. Please try again." };
+    }
+  };
+
+  // Operator-only repair: unlink a login from a member profile.
+  // Needed when the Firebase account was deleted (or the email cleared) but the
+  // profile still carries the old email/authUid — the member then cannot claim
+  // it (a rule only lets an unlinked profile be claimed) and cannot log in.
+  // Removing BOTH fields puts the profile back in the "claim me" state.
+  const handleUnlinkMemberLogin = async (memberId: string): Promise<{ success: boolean; error?: string }> => {
+    const member = allMembers.find(m => m.id === memberId);
+    if (!member) return { success: false, error: "Member not found." };
+    try {
+      await updateDoc(doc(db, "members", memberId), {
+        email: deleteField(),
+        authUid: deleteField(),
+      });
+      const { email, authUid, ...rest } = member;
+      setAllMembers(prev => prev.map(m => m.id === memberId ? (rest as Member) : m));
+      return { success: true };
+    } catch (e: any) {
+      console.error(e);
+      return { success: false, error: e?.code === "permission-denied" ? "Only the CoVest operator can unlink a login." : "Could not unlink the login. Please try again." };
     }
   };
 
@@ -1342,7 +1364,10 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
               )}
               {isPlatformAdmin && <GroupRequestsPanel />}
               {isPlatformAdmin && <MigrationPanel />}
-              <MemberLoginsPanel members={members} />
+              <MemberLoginsPanel
+                members={members}
+                onUnlinkLogin={isPlatformAdmin ? handleUnlinkMemberLogin : undefined}
+              />
               <ReliefAdminPanel
                 groupId={selectedGroupId}
                 adminEmail={adminUser?.email || authUser?.email || null}
