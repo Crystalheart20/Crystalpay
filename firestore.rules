@@ -75,6 +75,10 @@ service cloud.firestore {
       return m == null ? null : ("role" in m ? m.role : null);
     }
 
+    function detailsLockedOf(m) {
+      return m == null ? null : ("detailsLockedRoundId" in m ? m.detailsLockedRoundId : null);
+    }
+
     function sameGroup(oldDoc, newDoc) {
       return groupOf(oldDoc) == groupOf(newDoc);
     }
@@ -221,6 +225,19 @@ service cloud.firestore {
           !("authUid" in resource.data)
           && authUidOf(request.resource.data) == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["email", "authUid"])
+        )
+        // A member may correct their own bank details -- but not once the ballot
+        // has named them this round's winner: that is the account everyone pays
+        // into. Only the three bank fields may change, so the member cannot
+        // clear the lock themselves.
+        || (
+          isSignedIn()
+          && authUidOf(resource.data) == request.auth.uid
+          && sameGroup(resource.data, request.resource.data)
+          && detailsLockedOf(resource.data) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "bankName", "accountNo", "accountName"
+          ])
         );
 
       allow delete: if isPlatformAdmin()

@@ -75,6 +75,10 @@ service cloud.firestore {
       return m == null ? null : ("role" in m ? m.role : null);
     }
 
+    function detailsLockedOf(m) {
+      return m == null ? null : ("detailsLockedRoundId" in m ? m.detailsLockedRoundId : null);
+    }
+
     function sameGroup(oldDoc, newDoc) {
       return groupOf(oldDoc) == groupOf(newDoc);
     }
@@ -155,6 +159,8 @@ service cloud.firestore {
 
     // --- Groups ---
     match /groups/{groupId} {
+      // Group NAMES stay visible to any signed-in session (the group picker
+      // needs them). Everything inside a group is group-scoped.
       allow read: if isSignedIn();
 
       // Anyone may start a group. It lands as PENDING_REVIEW -- only the
@@ -181,7 +187,8 @@ service cloud.firestore {
 
     // --- Members ---
     match /members/{memberId} {
-      allow read: if isSignedIn();
+      // A member sees the members of the groups they belong to, nothing else.
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
 
       // Self-registration: a signed-in person creates their own profile,
       // inactive (the operator/HEAD activates it), never as HEAD.
@@ -216,6 +223,19 @@ service cloud.firestore {
           !("authUid" in resource.data)
           && authUidOf(request.resource.data) == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["email", "authUid"])
+        )
+        // A member may correct their own bank details -- but not once the ballot
+        // has named them this round's winner: that is the account everyone pays
+        // into. Only the three bank fields may change, so the member cannot
+        // clear the lock themselves.
+        || (
+          isSignedIn()
+          && authUidOf(resource.data) == request.auth.uid
+          && sameGroup(resource.data, request.resource.data)
+          && detailsLockedOf(resource.data) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "bankName", "accountNo", "accountName"
+          ])
         );
 
       allow delete: if isPlatformAdmin()
@@ -227,7 +247,7 @@ service cloud.firestore {
 
     // --- Rounds (months) + payment log ---
     match /months/{monthId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
 
       allow create: if isPlatformAdmin()
         || (groupOf(request.resource.data) is string && isHeadOf(groupOf(request.resource.data)));
@@ -254,7 +274,7 @@ service cloud.firestore {
 
     // --- Relief Fund ---
     match /reliefMembers/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       // Joining the fund: a member opts in with a zero balance. Balance and
       // lifetime contributions are only ever touched by the operator/HEAD.
       allow create: if isPlatformAdmin() || (
@@ -272,7 +292,7 @@ service cloud.firestore {
     }
 
     match /reliefContributions/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       // A deposit starts as PENDING and is only ever credited by the operator/HEAD.
       allow create: if isPlatformAdmin() || (
         isMemberOf(groupOf(request.resource.data))
@@ -288,7 +308,7 @@ service cloud.firestore {
     }
 
     match /reliefWithdrawals/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow create: if isPlatformAdmin() || (
         isMemberOf(groupOf(request.resource.data))
         && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
@@ -303,7 +323,7 @@ service cloud.firestore {
     }
 
     match /reliefRequests/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow create: if isPlatformAdmin() || (
         isMemberOf(groupOf(request.resource.data))
         && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
@@ -324,7 +344,7 @@ service cloud.firestore {
     }
 
     match /reliefVoteReceipts/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       // One receipt per member per request (document id is {requestId}_{memberId})
       // and it can never be changed -- that is what stops a second vote.
       allow create: if isMemberOf(groupOf(request.resource.data))
@@ -334,7 +354,7 @@ service cloud.firestore {
     }
 
     match /reliefBallots/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       // The ballot carries the choice but no voter -- that is what keeps the
       // vote anonymous. A receipt must already exist for the voter, so a
       // member cannot drop in extra ballots.
@@ -344,7 +364,7 @@ service cloud.firestore {
     }
 
     match /reliefRepayments/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow create: if isPlatformAdmin() || (
         isMemberOf(groupOf(request.resource.data))
         && memberIdOf(request.resource.data) == myMemberIdIn(groupOf(request.resource.data))
@@ -375,7 +395,7 @@ service cloud.firestore {
     }
 
     match /real_estate_pools/{poolId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow create: if isPlatformAdmin()
         || (groupOf(request.resource.data) is string && isHeadOf(groupOf(request.resource.data)));
       allow update: if isPlatformAdmin()
@@ -405,7 +425,7 @@ service cloud.firestore {
     }
 
     match /pool_disputes/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow create: if isPlatformAdmin() || (
         groupOf(request.resource.data) is string
         && isMemberOf(groupOf(request.resource.data))
@@ -420,7 +440,7 @@ service cloud.firestore {
     }
 
     match /ownership_certificates/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPlatformAdmin() || isMemberOf(groupOf(resource.data));
       allow write: if isPlatformAdmin()
         || (
           groupOf(request.resource.data) is string

@@ -30,6 +30,7 @@ export interface Member {
   pin?: string; // 4-digit PIN — legacy fallback during transition to email/password login
   email?: string; // Set once member registers with email + password
   authUid?: string; // Firebase Auth UID, set once member registers — links this record to their real login
+  detailsLockedRoundId?: string; // set when this member is drawn as a round's winner — bank details frozen until the round closes
 }
 
 export interface PaymentLog {

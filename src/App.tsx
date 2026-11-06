@@ -527,8 +527,11 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
 
     for (const m of members) {
       if (recipientIds.includes(m.id) || m.collectedMonths.includes(currentMonthId)) {
+        // setDoc replaces the whole document, so dropping detailsLockedRoundId
+        // here is what unlocks the winner's bank details again.
+        const { detailsLockedRoundId, ...rest } = m;
         const updatedMem: Member = {
-          ...m,
+          ...rest,
           collectedMonths: m.collectedMonths.filter(id => id !== currentMonthId)
         };
         try {
@@ -626,6 +629,41 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
     } catch (e: any) {
       console.error(e);
       return { success: false, error: e?.code === "permission-denied" ? "Only the CoVest operator can unlink a login." : "Could not unlink the login. Please try again." };
+    }
+  };
+
+  // A member correcting their own bank details from the portal's Settings tab.
+  // The rules only allow this while the member is not the current round's
+  // winner (detailsLockedRoundId), and only for these three fields. Returns
+  // whether the write really landed — the portal must never show "Saved" for a
+  // write Firestore refused (a PIN-only session is signed in anonymously).
+  const handleUpdateBankDetails = async (
+    memberId: string,
+    fields: { bankName: string; accountNo: string; accountName: string }
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const member = allMembers.find(m => m.id === memberId);
+    if (!member) return { ok: false, error: "Member not found." };
+    const previous = {
+      bankName: member.bankName,
+      accountNo: member.accountNo,
+      accountName: member.accountName,
+    };
+    setAllMembers(prev => prev.map(m => m.id === memberId ? { ...m, ...fields } : m));
+    try {
+      await updateDoc(doc(db, "members", memberId), fields);
+      return { ok: true };
+    } catch (e: any) {
+      console.error("Updating bank details failed:", e);
+      setAllMembers(prev => prev.map(m => m.id === memberId ? { ...m, ...previous } : m));
+      if (e?.code === "permission-denied") {
+        return {
+          ok: false,
+          error: member.detailsLockedRoundId
+            ? "Your bank details are locked for this round. Ask your group head to change them."
+            : "Not saved. Sign in with your email and password, then try again.",
+        };
+      }
+      return { ok: false, error: "Not saved. Please try again." };
     }
   };
 
@@ -755,8 +793,9 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       for (const mId of removedRecipients) {
         const memObj = members.find(m => m.id === mId);
         if (memObj) {
+          const { detailsLockedRoundId, ...rest } = memObj;
           const updatedMem: Member = {
-            ...memObj,
+            ...rest,
             collectedMonths: memObj.collectedMonths.filter(id => id !== currentMonthId)
           };
           try {
@@ -774,7 +813,10 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
             ...memObj,
             collectedMonths: memObj.collectedMonths.includes(currentMonthId)
               ? memObj.collectedMonths
-              : [...memObj.collectedMonths, currentMonthId]
+              : [...memObj.collectedMonths, currentMonthId],
+            // Freeze this winner's bank details for the round: everyone is about
+            // to pay into that account. Cleared on reset or when the round closes.
+            detailsLockedRoundId: currentMonthId
           };
           try {
             await setDoc(doc(db, "members", mId), updatedMem);
@@ -978,6 +1020,19 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
       await setDoc(doc(db, "months", `${selectedGroupId}_${currentMonthId}`), updatedCurrentMonth);
     } catch (e) {
       console.error(e);
+    }
+
+    // The round is over, so its winners may edit their bank details again.
+    for (const mId of (targetMonth.recipients || [])) {
+      const memObj = members.find(m => m.id === mId);
+      if (memObj && memObj.detailsLockedRoundId) {
+        const { detailsLockedRoundId, ...rest } = memObj;
+        try {
+          await setDoc(doc(db, "members", mId), rest);
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
 
     const [yearStr, monthStr] = currentMonthId.split("-");
@@ -1329,6 +1384,7 @@ setAdminUser(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email || ""
               onMemberRegister={handleMemberRegister}
               onMemberLogin={handleMemberLogin}
               onRegisterNewMember={handleRegisterNewMember}
+              onUpdateBankDetails={handleUpdateBankDetails}
             />
           )}
 

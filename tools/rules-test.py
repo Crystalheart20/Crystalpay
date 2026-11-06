@@ -145,8 +145,9 @@ def suite_a():
           new={"data": {"groupId": "default", "uid": "someone", "email": "s@e.com", "memberId": "mem-x", "role": "HEAD"}}),
 
         # --- reads are still open ---
-        c("anyone signed in reads members", "/members/m1", "LIST", "ALLOW", "member-uid", MEMBER),
-        c("anyone signed in reads rounds", "/months/default_2026-10", "GET", "ALLOW", "member-uid", MEMBER),
+        # (the two "signed in reads members/rounds" cases live in suite B: the
+        # read rule goes through isMemberOf -> exists(), which the test API
+        # cannot evaluate, so they can only be checked with the stub)
         c("anonymous cannot write a round", "/months/default_2026-10", "UPDATE", "DENY", None, None,
           new=MONTH_DOC, old=MONTH_DOC),
 
@@ -182,6 +183,24 @@ def suite_a():
         c("cannot change your own active flag", "/members/mem-p", "UPDATE", "DENY", "member-uid", MEMBER,
           new={"data": {"id": "mem-p", "name": "Me", "groupId": "default", "email": "member@example.com", "authUid": "member-uid", "isActive": False}},
           old={"data": {"id": "mem-p", "name": "Me", "groupId": "default", "email": "member@example.com", "authUid": "member-uid", "isActive": True}}),
+        # --- a member correcting their own bank details ---
+        c("member updates own bank details", "/members/mem-mine", "UPDATE", "ALLOW", "member-uid", MEMBER,
+          new={"data": {**MEMBER_DOC["data"], "accountNo": "2"}},
+          old=MEMBER_DOC),
+        c("member cannot update bank details once drawn as winner", "/members/mem-mine", "UPDATE", "DENY", "member-uid", MEMBER,
+          new={"data": {**MEMBER_DOC["data"], "accountNo": "2", "detailsLockedRoundId": "2026-10"}},
+          old={"data": {**MEMBER_DOC["data"], "detailsLockedRoundId": "2026-10"}}),
+        c("member cannot clear their own winner lock", "/members/mem-mine", "UPDATE", "DENY", "member-uid", MEMBER,
+          new={"data": {**MEMBER_DOC["data"], "accountNo": "2"}},
+          old={"data": {**MEMBER_DOC["data"], "detailsLockedRoundId": "2026-10"}}),
+        c("member cannot change their name through the bank-details path", "/members/mem-mine", "UPDATE", "DENY", "member-uid", MEMBER,
+          new={"data": {**MEMBER_DOC["data"], "name": "Someone Else"}},
+          old=MEMBER_DOC),
+        c("member cannot edit another member's bank details", "/members/mem-other", "UPDATE", "DENY", "member-uid", MEMBER,
+          new={"data": {"id": "mem-other", "name": "Other", "groupId": "default", "authUid": "other-uid",
+                        "bankName": "Bank", "accountNo": "999", "accountName": "Other", "phone": "0"}},
+          old={"data": {"id": "mem-other", "name": "Other", "groupId": "default", "authUid": "other-uid",
+                        "bankName": "Bank", "accountNo": "1", "accountName": "Other", "phone": "0"}}),
         c("member deletes own profile", "/members/mem-mine", "DELETE", "ALLOW", "member-uid", MEMBER,
           old=MEMBER_DOC),
         c("member cannot delete another profile", "/members/mem-other", "DELETE", "DENY", "member-uid", MEMBER,
@@ -206,6 +225,14 @@ def suite_a():
 def suite_b():
     """Field-level guards, with the role lookups stubbed out."""
     return [
+        # reads go through isMemberOf -> exists(), so they can only be checked here.
+        # GET (not LIST): the read rule reads resource.data, which is null on a
+        # list request, so the test API can only evaluate a single-document read.
+        c("anyone signed in reads members", "/members/mem-mine", "GET", "ALLOW", "member-uid", MEMBER,
+          old=MEMBER_DOC),
+        c("anyone signed in reads rounds", "/months/default_2026-10", "GET", "ALLOW", "member-uid", MEMBER,
+          old=MONTH_DOC),
+
         c("member confirms a credit on a round", "/months/default_2026-10", "UPDATE", "ALLOW", "member-uid", MEMBER,
           new={"data": {**MONTH_DOC["data"], "payments": [{"memberId": "mem-mine", "recipientId": "mem-x", "confirmedByRecipient": True}]}},
           old=MONTH_DOC),

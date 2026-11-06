@@ -47,6 +47,10 @@ interface MemberPortalProps {
     password: string,
     targetGroupId: string
   ) => Promise<{ success: boolean; error?: string }>;
+  onUpdateBankDetails?: (
+    memberId: string,
+    fields: { bankName: string; accountNo: string; accountName: string }
+  ) => Promise<{ ok: boolean; error?: string }>;
   groups?: { id: string; name: string }[];
 }
 
@@ -63,7 +67,8 @@ export default function MemberPortal({
   onLoginChange,
   onMemberRegister,
   onMemberLogin,
-  onRegisterNewMember
+  onRegisterNewMember,
+  onUpdateBankDetails
 }: MemberPortalProps) {
   // Authentication & Session state
   const [selectedMemberIdForPin, setSelectedMemberIdForPin] = useState<string>("");
@@ -95,6 +100,10 @@ export default function MemberPortal({
   const [setupPassword, setSetupPassword] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
+  // Settings tab: the member's own bank details (editable until they win a round)
+  const [bankForm, setBankForm] = useState({ bankName: "", accountNo: "", accountName: "" });
+  const [bankSaving, setBankSaving] = useState(false);
+  const [bankMsg, setBankMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Sync session once async members load from Firebase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -190,6 +199,44 @@ export default function MemberPortal({
     return onAuthStateChanged(auth, apply);
   }, []);
   const isMissingEmailLogin = !realLoginUid || (!!loggedInMember?.authUid && realLoginUid !== loggedInMember.authUid);
+
+  // Bank details are frozen for the round's winner: that is the account every
+  // member is about to pay into. The lock is set by the ballot draw and lifted
+  // when the ballot is reset or the round is closed.
+  const isBankLocked = !!loggedInMember?.detailsLockedRoundId;
+
+  // Keep the bank form in step with the live member document, so an admin
+  // correction (or a reload) shows up here.
+  useEffect(() => {
+    if (!loggedInMember) return;
+    setBankForm({
+      bankName: loggedInMember.bankName || "",
+      accountNo: loggedInMember.accountNo || "",
+      accountName: loggedInMember.accountName || "",
+    });
+    setBankMsg(null);
+  }, [loggedInMember?.id, loggedInMember?.bankName, loggedInMember?.accountNo, loggedInMember?.accountName]);
+
+  const bankFormDirty = !!loggedInMember && (
+    bankForm.bankName.trim() !== (loggedInMember.bankName || "") ||
+    bankForm.accountNo.trim() !== (loggedInMember.accountNo || "") ||
+    bankForm.accountName.trim() !== (loggedInMember.accountName || "")
+  );
+
+  const handleSaveBankDetails = async () => {
+    if (!loggedInMember || !onUpdateBankDetails) return;
+    setBankSaving(true);
+    setBankMsg(null);
+    const res = await onUpdateBankDetails(loggedInMember.id, {
+      bankName: bankForm.bankName.trim(),
+      accountNo: bankForm.accountNo.trim(),
+      accountName: bankForm.accountName.trim(),
+    });
+    setBankSaving(false);
+    setBankMsg(res.ok
+      ? { ok: true, text: "Saved. Your group head and the ledger now show these details." }
+      : { ok: false, text: res.error || "Not saved. Please try again." });
+  };
 
   // Leaving a group you never took part in — removes your profile and access.
   const [leaving, setLeaving] = useState(false);
@@ -1348,9 +1395,6 @@ export default function MemberPortal({
                   {[
                     ["Name", loggedInMember?.name],
                     ["Phone", loggedInMember?.phone],
-                    ["Bank", loggedInMember?.bankName],
-                    ["Account number", loggedInMember?.accountNo],
-                    ["Account name", loggedInMember?.accountName],
                     ["Status", loggedInMember?.isActive ? "Active" : "Waiting for group head"]
                   ].map(function(pair) {
                     return (
@@ -1361,9 +1405,90 @@ export default function MemberPortal({
                     );
                   })}
                 </div>
+
+                <div className="pt-1 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bank details</p>
+
+                  {isBankLocked && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-[11px] font-bold text-amber-800">
+                        Locked — you are this round's winner
+                      </p>
+                      <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5">
+                        Everyone is paying into this account, so it cannot change until the round
+                        closes. If something is wrong, ask your group head to correct it.
+                      </p>
+                    </div>
+                  )}
+
+                  {!isBankLocked && isMissingEmailLogin && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-[11px] font-bold text-amber-800">Sign in with your email to save changes</p>
+                      <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5">
+                        A PIN or member-link session cannot save to the group ledger. Use the
+                        Login &amp; security box above.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Bank</span>
+                      <input
+                        type="text"
+                        value={bankForm.bankName}
+                        onChange={(e) => { setBankForm(f => ({ ...f, bankName: e.target.value })); setBankMsg(null); }}
+                        disabled={isBankLocked}
+                        placeholder="e.g. Moniepoint MFB"
+                        className="mt-1 w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Account number</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={bankForm.accountNo}
+                        onChange={(e) => { setBankForm(f => ({ ...f, accountNo: e.target.value })); setBankMsg(null); }}
+                        disabled={isBankLocked}
+                        placeholder="10 digits"
+                        className="mt-1 w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </label>
+                    <label className="block sm:col-span-2">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Account name</span>
+                      <input
+                        type="text"
+                        value={bankForm.accountName}
+                        onChange={(e) => { setBankForm(f => ({ ...f, accountName: e.target.value })); setBankMsg(null); }}
+                        disabled={isBankLocked}
+                        placeholder="Name on the bank account"
+                        className="mt-1 w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                    </label>
+                  </div>
+
+                  {!isBankLocked && (
+                    <button
+                      onClick={handleSaveBankDetails}
+                      disabled={bankSaving || !bankFormDirty || isMissingEmailLogin || !onUpdateBankDetails}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold"
+                    >
+                      {bankSaving ? "Saving…" : "Save bank details"}
+                    </button>
+                  )}
+
+                  {bankMsg && (
+                    <p className={`text-[11px] font-semibold leading-relaxed ${bankMsg.ok ? "text-emerald-700" : "text-rose-600"}`}>
+                      {bankMsg.text}
+                    </p>
+                  )}
+                </div>
+
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  Your group head changes these. A wrong bank detail has to be fixed by whoever runs
-                  the group, so the correction shows up for everyone in the ledger.
+                  You can change your own bank details any time — except while you are the round's
+                  winner, when they are frozen until the round closes. Name and phone are changed by
+                  your group head.
                 </p>
               </div>
             </div>
